@@ -16,5 +16,11 @@ captures/
 .cxx
 local.properties
 
+# .idea/ : on ne garde que la configuration projet partagée (SDK, Gradle,
+# compilateur, mapping VCS). Le reste est personnel/local à chaque machine.
+/.idea/deploymentTargetSelector.xml
+/.idea/markdown.xml
+/.idea/runConfigurations.xml
+
 # Config locale d'outils (spécifique machine/session, pas de gouvernance projet)
 .claude/settings.local.json
