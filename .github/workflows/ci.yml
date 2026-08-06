@@ -1,0 +1,51 @@
+name: CI
+
+# CI minimale : construit et teste les modules :app et :wear sur chaque
+# push et chaque pull request. Ne publie aucun artefact. Voir ROADMAP.md
+# Phase 0 / Tâche 0.5.
+on:
+  push:
+  pull_request:
+
+# Un nouveau push sur une branche annule le run précédent en cours pour
+# cette même branche, pour ne pas gaspiller de temps de build sur un état
+# déjà obsolète.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build & test (:app, :wear)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout du dépôt
+        uses: actions/checkout@v4
+
+      - name: Installer le JDK 25 (requis par gradle-daemon-jvm.properties)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Configurer Gradle (cache dépendances + wrapper)
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Installer les licences du SDK Android
+        uses: android-actions/setup-android@v3
+
+      - name: Rendre gradlew exécutable
+        run: chmod +x ./gradlew
+
+      - name: assembleDebug (:app + :wear)
+        run: ./gradlew assembleDebug --stacktrace
+
+      - name: assembleRelease (:app + :wear)
+        run: ./gradlew assembleRelease --stacktrace
+
+      - name: testDebugUnitTest (:app + :wear)
+        run: ./gradlew testDebugUnitTest --stacktrace
+
+      - name: lint (:app + :wear)
+        run: ./gradlew lint --stacktrace
