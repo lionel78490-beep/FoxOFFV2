@@ -1,0 +1,20 @@
+*.iml
+.gradle
+/local.properties
+/.idea/caches
+/.idea/libraries
+/.idea/modules.xml
+/.idea/workspace.xml
+/.idea/navEditor.xml
+/.idea/assetWizardSettings.xml
+.DS_Store
+# Sans le "/" en tête, ces patterns matchent à toute profondeur — nécessaire
+# pour exclure app/build/ et wear/build/, pas seulement un build/ racine.
+build/
+captures/
+.externalNativeBuild
+.cxx
+local.properties
+
+# Config locale d'outils (spécifique machine/session, pas de gouvernance projet)
+.claude/settings.local.json
