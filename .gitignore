@@ -24,3 +24,17 @@ local.properties
 
 # Config locale d'outils (spécifique machine/session, pas de gouvernance projet)
 .claude/settings.local.json
+
+# Clé de signature développeur Connect IQ (garmin/) — privée, équivalent
+# d'un keystore Android, jamais commitée.
+garmin/developer_key.der
+garmin/developer_key.pem
+garmin/bin/
+garmin/gen/
+
+# Clé de signature Play Store ("upload key" — voir DECISIONS.md/ROADMAP.md
+# Phase 9). Perdre ce fichier n'empêche pas de mettre à jour l'app grâce à
+# Play App Signing (Google gère la vraie clé de signature), mais il ne doit
+# jamais quitter cette machine — tout le dossier est exclu, y compris les
+# mots de passe dans keystore.properties.
+keystore/
