@@ -7,6 +7,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.*
 import com.projectfox.foxoff.ui.dashboard.DashboardScreen
 import com.projectfox.foxoff.ui.onboarding.OnboardingNavigation
+import com.projectfox.foxoff.ui.onboarding.OnboardingSettings
 import com.projectfox.foxoff.ui.theme.FoxTheme
 
 class MainActivity : ComponentActivity() {
@@ -14,11 +15,14 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            var showOnboarding by remember { mutableStateOf(true) }
-            
+            var showOnboarding by remember {
+                mutableStateOf(!OnboardingSettings.isCompleted(this@MainActivity))
+            }
+
             FoxTheme {
                 if (showOnboarding) {
                     OnboardingNavigation(onFinish = {
+                        OnboardingSettings.markCompleted(this@MainActivity)
                         showOnboarding = false
                     })
                 } else {

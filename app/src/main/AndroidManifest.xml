@@ -9,6 +9,22 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
     <uses-permission android:name="android.permission.NEARBY_WIFI_DEVICES" android:usesPermissionFlags="neverForLocation" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+    <!--
+        Health Connect (calibration du BPM de repos depuis l'app compagnon
+        de la montre active — Samsung Health pour Wear OS, Garmin Connect
+        pour Garmin — voir core/health/HealthConnectBaselineProvider.kt) —
+        lecture seule, aucune permission d'écriture.
+    -->
+    <uses-permission android:name="android.permission.health.READ_HEART_RATE" />
+    <uses-permission android:name="android.permission.health.READ_RESTING_HEART_RATE" />
+    <!-- Croise les sessions de sommeil réelles avec le BPM mesuré pendant
+         ces sessions, pour une référence de repos plus précise que "au
+         repos" en général (voir computeRestingBaseline()). -->
+    <uses-permission android:name="android.permission.health.READ_SLEEP" />
 
     <application
 
@@ -42,10 +58,80 @@
             android:name="com.projectfox.foxoff.core.service.PhoneWearListenerService"
             android:exported="true">
             <intent-filter>
-                <action android:name="com.google.android.gms.wearable.MESSAGE_RECEIVED" />
-                <data android:host="*" android:scheme="wear" android:pathPrefix="/foxoff" />
+                <!--
+                    BIND_LISTENER fait lier ce service par Google Play Services
+                    pour TOUS les événements Data Layer, y compris
+                    onPeerConnected/onPeerDisconnected. L'ancienne déclaration
+                    (MESSAGE_RECEIVED + filtre de chemin) ne couvrait pas ces
+                    deux callbacks, ce qui était la cause racine du bug
+                    "Bluetooth coupé mais toujours affiché Connectée".
+
+                    Lint marque BIND_LISTENER comme déprécié depuis 2016 en
+                    recommandant des "api-based live listeners" à la place —
+                    mais cette alternative n'existe QUE pour DataClient et
+                    MessageClient. Vérifié par décompilation (javap) de
+                    play-services-wearable 20.0.1 : NodeClient n'expose
+                    aucune méthode addListener/OnPeerConnectedListener /
+                    OnPeerDisconnectedListener. Aucune alternative moderne
+                    n'existe pour recevoir ces deux événements ; BIND_LISTENER
+                    reste le seul mécanisme disponible.
+                -->
+                <action
+                    android:name="com.google.android.gms.wearable.BIND_LISTENER"
+                    tools:ignore="WearableBindListener" />
             </intent-filter>
         </service>
+
+        <service
+            android:name="com.projectfox.foxoff.core.service.FoxForegroundService"
+            android:exported="false"
+            android:foregroundServiceType="connectedDevice" />
+
+        <!--
+            BOOT_COMPLETED est un broadcast système protégé (seul le système
+            peut l'émettre) et fait partie des exemptions explicites
+            d'Android aux restrictions de démarrage de service en
+            arrière-plan : démarrer FoxForegroundService depuis ce receiver
+            est donc autorisé même app fermée. exported="true" est requis
+            pour recevoir un broadcast système, sans risque puisque
+            BOOT_COMPLETED ne peut pas être émis par une autre app.
+        -->
+        <receiver
+            android:name="com.projectfox.foxoff.core.service.FoxBootReceiver"
+            android:exported="true"
+            android:enabled="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
+
+        <!--
+            Activité de politique de confidentialité affichée depuis l'écran
+            de permissions Health Connect (lien "privacy policy") — requise
+            par le SDK, même pour un usage strictement local/lecture seule.
+        -->
+        <activity
+            android:name="com.projectfox.foxoff.core.health.HealthConnectPermissionsRationaleActivity"
+            android:exported="true"
+            android:theme="@style/Theme.FoxOFFV2">
+            <intent-filter>
+                <action android:name="androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE" />
+            </intent-filter>
+        </activity>
+        <activity-alias
+            android:name="ViewPermissionUsageActivity"
+            android:exported="true"
+            android:targetActivity="com.projectfox.foxoff.core.health.HealthConnectPermissionsRationaleActivity"
+            android:permission="android.permission.START_VIEW_PERMISSION_USAGE">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW_PERMISSION_USAGE" />
+                <category android:name="android.intent.category.HEALTH_PERMISSIONS" />
+            </intent-filter>
+        </activity-alias>
     </application>
+
+    <queries>
+        <package android:name="com.google.android.apps.healthdata" />
+    </queries>
 
 </manifest>
