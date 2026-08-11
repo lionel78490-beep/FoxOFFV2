@@ -4,16 +4,37 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import java.time.Duration
 import java.time.LocalTime
 
 /**
  * The core intelligence of FoxOFF.
  * Orchestrates multi-source event analysis and maintains global state.
+ *
+ * `config` DOIT être la même instance que celle passée à l'analyseur (voir
+ * FoxCore) : le suivi de `bpmBelowBaselineSince`/`lastBpmDropBonusAt`
+ * ci-dessous doit utiliser exactement le même seuil que WeightedSleepAnalyzer
+ * pour rester cohérent — deux copies de config qui divergent casseraient la
+ * garde anti-faux-positif.
  */
-class FoxBrain(private val analyzer: FoxBrainAnalyzer) {
+class FoxBrain(
+    private val analyzer: FoxBrainAnalyzer,
+    private val config: SleepScoringConfig = SleepScoringConfig()
+) {
 
     private val _state = MutableStateFlow(FoxBrainState())
     val state: StateFlow<FoxBrainState> = _state.asStateFlow()
+
+    /**
+     * Remplace la référence BPM de repos générique par défaut (voir
+     * FoxBrainState.restingBpmBaseline) par une valeur calibrée depuis les
+     * vraies données de l'utilisateur (voir HealthConnectBaselineProvider,
+     * appelé depuis FoxCore). Sans effet sur minBpmToday une fois établi —
+     * cette valeur ne sert qu'au "cold start" (voir WeightedSleepAnalyzer).
+     */
+    fun setRestingBpmBaseline(bpm: Int) {
+        _state.update { it.copy(restingBpmBaseline = bpm) }
+    }
 
     /**
      * Primary entry point for incoming data.
@@ -32,11 +53,48 @@ class FoxBrain(private val analyzer: FoxBrainAnalyzer) {
             when (event) {
                 is FoxBrainEvent.HeartRateReceived -> {
                     val bpm = event.bpm.toInt()
+
+                    // Même calcul de seuil que WeightedSleepAnalyzer (même
+                    // config partagée) : suit depuis quand le BPM est
+                    // continûment sous le seuil, et si le bonus a déjà été
+                    // accordé pour cet épisode — voir SleepScoringConfig
+                    // .sustainedBpmDropDuration.
+                    val baseline = if (baseState.minBpmToday > 0) {
+                        baseState.minBpmToday.toFloat()
+                    } else {
+                        baseState.restingBpmBaseline.toFloat()
+                    }
+                    val belowThreshold = event.bpm < baseline * (1 + config.bpmDropThreshold)
+                    val since = baseState.bpmBelowBaselineSince
+                    // Même dérivation que WeightedSleepAnalyzer (voir sa
+                    // documentation) : octroi PÉRIODIQUE tant que le BPM
+                    // reste bas, pas une seule fois pour tout l'épisode.
+                    val reference = baseState.lastBpmDropBonusAt ?: since
+                    val due = belowThreshold && reference != null &&
+                            !Duration.between(reference, event.timestamp).isNegative &&
+                            Duration.between(reference, event.timestamp) >= config.sustainedBpmDropDuration
+
                     baseState.copy(
+                        // Un BPM reçu EST une preuve applicative de présence
+                        // (voir WatchPresenceCoordinator) : il doit à lui seul
+                        // ramener l'état à "Connectée", sans attendre un
+                        // watch_info séparé. Le nom mémorisé n'est pas touché
+                        // ici (cet événement ne le porte pas).
+                        watchConnected = true,
                         currentBpm = bpm,
                         lastBpmTime = LocalTime.now(),
                         minBpmToday = if (baseState.minBpmToday == 0) bpm else minOf(baseState.minBpmToday, bpm),
-                        maxBpmToday = maxOf(baseState.maxBpmToday, bpm)
+                        maxBpmToday = maxOf(baseState.maxBpmToday, bpm),
+                        bpmBelowBaselineSince = when {
+                            !belowThreshold -> null
+                            since == null -> event.timestamp
+                            else -> since
+                        },
+                        lastBpmDropBonusAt = when {
+                            !belowThreshold -> null
+                            due -> event.timestamp
+                            else -> baseState.lastBpmDropBonusAt
+                        }
                     )
                 }
                 is FoxBrainEvent.WatchConnected -> baseState.copy(
@@ -71,6 +129,9 @@ class FoxBrain(private val analyzer: FoxBrainAnalyzer) {
                 )
                 is FoxBrainEvent.MonitoringStopped -> baseState.copy(
                     isMonitoring = false
+                )
+                is FoxBrainEvent.SleepDetected -> baseState.copy(
+                    tvIsPaused = true
                 )
                 else -> baseState
             }

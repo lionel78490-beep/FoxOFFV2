@@ -1,5 +1,6 @@
 package com.projectfox.foxoff.brain
 
+import java.time.Duration
 import java.time.LocalDateTime
 import java.time.ZoneId
 
@@ -16,11 +17,34 @@ class WeightedSleepAnalyzer(
 
         when (event) {
             is FoxBrainEvent.HeartRateReceived -> {
-                // Check for BPM drop compared to minBpmToday or a rolling average (simplified here)
-                val baseline = currentState.minBpmToday.toFloat()
-                if (baseline > 0 && event.bpm < baseline * (1 + config.bpmDropThreshold)) {
+                // Tant qu'aucun vrai minBpmToday n'existe encore (avant le
+                // premier échantillon de la session), on s'appuie sur
+                // restingBpmBaseline (moyenne générique au repos) plutôt que
+                // de désactiver la règle entièrement — voir FoxBrainState.
+                // Dès qu'un minBpmToday réel apparaît, il prend le dessus :
+                // la calibration devient alors propre à l'utilisateur.
+                val baseline = if (currentState.minBpmToday > 0) {
+                    currentState.minBpmToday.toFloat()
+                } else {
+                    currentState.restingBpmBaseline.toFloat()
+                }
+                val belowThreshold = event.bpm < baseline * (1 + config.bpmDropThreshold)
+                val since = currentState.bpmBelowBaselineSince
+                // Le point de référence pour la PROCHAINE échéance est le
+                // dernier octroi s'il y en a eu un, sinon le tout début de
+                // l'épisode — permet un octroi PÉRIODIQUE (toutes les
+                // sustainedBpmDropDuration) tant que le BPM reste bas,
+                // plutôt qu'un octroi unique pour tout l'épisode (qui
+                // plafonnait le score bien trop bas pour jamais atteindre
+                // ASLEEP — régression corrigée le 2026-08-08).
+                val reference = currentState.lastBpmDropBonusAt ?: since
+                val due = reference != null &&
+                        !Duration.between(reference, event.timestamp).isNegative &&
+                        Duration.between(reference, event.timestamp) >= config.sustainedBpmDropDuration
+
+                if (belowThreshold && due) {
                     currentProb += config.bpmDropBonus
-                    reason = "Baisse de la fréquence cardiaque détectée"
+                    reason = "Baisse soutenue de la fréquence cardiaque détectée"
                 }
             }
 
