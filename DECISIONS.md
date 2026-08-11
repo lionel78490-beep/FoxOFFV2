@@ -16,6 +16,8 @@
 | [ADR-007](#adr-007--pourquoi-wear-health-services) | Pourquoi Wear Health Services | Adopté (non implémenté) |
 | [ADR-008](#adr-008--pourquoi-messageclient--data-layer-api) | Pourquoi MessageClient / Data Layer API | Adopté |
 | [ADR-009](#adr-009--confiance-tls-tofu-sans-épinglage-post-pairing) | Confiance TLS TOFU sans épinglage post-pairing | Documenté a posteriori — à revoir Phase 4 |
+| [ADR-010](#adr-010--priorisation-temporaire-dune-application-complète-avant-reprise-de-la-phase-1) | Priorisation temporaire d'une application complète avant reprise de la Phase 1 | Adopté |
+| [ADR-011](#adr-011--abstraction-watchtransport-et-support-garmin-connect-iq) | Abstraction WatchTransport et support Garmin Connect IQ | Adopté (Android) — validation matérielle en attente |
 
 ---
 
@@ -78,9 +80,17 @@ toute l'UI, sur les deux modules.
 
 ## ADR-003 — Pourquoi Hilt
 
-**Statut** — Proposé, non implémenté. Planifié en
-[ROADMAP.md](ROADMAP.md) Phase 3 ("Refactor architectural progressif").
-Aucune dépendance Hilt n'est présente dans `libs.versions.toml` à ce jour.
+**Statut** — Fondation posée (2026-08-08), consommation différée. Hilt
+2.60.1 + KSP sont dans `libs.versions.toml` et appliqués à `:app`,
+`FoxApplication` porte `@HiltAndroidApp`. `FoxCore` reste pour l'instant un
+`object` auto-suffisant, non injecté — la conséquence attendue ci-dessous
+("FoxCore cesse d'être un object...") n'est PAS encore faite,
+délibérément : elle touche le code activement testé nuit après nuit en ce
+moment (voir ROADMAP.md Phase 3). Note d'implémentation : Hilt 2.57.1
+(dernière version stable au moment de la recherche initiale) échoue avec
+AGP 9 ("Android BaseExtension not found") — Hilt 2.59+ est la première
+version à supporter AGP 9 (nécessite aussi Gradle 9.1+, déjà le cas ici
+avec Gradle 9.5.0) ; 2.60.1 a été retenu.
 
 **Contexte** — `FoxCore` est aujourd'hui un `object` singleton qui
 instancie lui-même ses dépendances (`FoxTvEngine`, `RealTvController`,
@@ -119,12 +129,19 @@ dépendances dans `:app`, à partir de la Phase 3 de la Roadmap.
 
 ## ADR-004 — Pourquoi Room
 
-**Statut** — Proposé, non implémenté. Planifié en
-[ROADMAP.md](ROADMAP.md) Phase 3 (fondation) puis consommé en Phase 7 (UI
-historique). Aucune dépendance Room dans `libs.versions.toml` à ce jour —
-il n'existe aujourd'hui **aucune persistance** des sessions de sommeil, de
-l'historique BPM ou de la TV appairée au-delà de `SharedPreferences`
-ponctuelles (`FoxTvSettings`, `TvKeyStore`).
+**Statut** — Fondation posée (2026-08-08), consommation différée à la
+Phase 7. Room 2.8.4 + KSP dans `libs.versions.toml`, appliqué à `:app`.
+Une seule entité pour l'instant (`SleepSessionEntity`/`SleepSessionDao`/
+`AppDatabase`, package `data/local/`), fournie via Hilt
+(`di/DatabaseModule.kt`) — pas les quatre domaines listés plus bas
+("sessions de sommeil, historique BPM, TV appairée, préférences") : le
+schéma complet attendra les vrais besoins de la Phase 7 plutôt que d'être
+deviné à l'avance. `NightLog`/`SleepDetectionHistory` (SharedPreferences/
+JSON) restent la source de vérité de l'onglet Historique, inchangés. Note
+d'implémentation : `androidx.room:room-runtime-android` n'expose que le
+builder basé sur `Context` (confirmé par décompilation de l'AAR) — le test
+du DAO est un test instrumenté (`androidTest`), pas un test JVM pur ; non
+exécuté faute d'appareil connecté pendant cette session.
 
 **Contexte** — La Phase 7 de la Roadmap (historique de sommeil, graphiques
 BPM) nécessite une source de vérité locale, structurée et interrogeable
@@ -329,6 +346,138 @@ pairing initial (`TvPairingManager.verifyPin`).
   TLS") plutôt que laissé comme angle mort.
 - Ne bloque pas la Phase 4 (durcissement du TV Engine), mais l'épinglage
   d'empreinte post-pairing doit être évalué à ce moment-là.
+
+---
+
+## ADR-010 — Priorisation temporaire d'une application complète avant reprise de la Phase 1
+
+**Statut** — Adopté, 2026-08-06.
+
+**Contexte** — Les Principes directeurs 1 et 2 de [ROADMAP.md](ROADMAP.md)
+imposaient de valider la boucle réelle Watch → Phone → Brain (Phase 1)
+avant toute autre priorité. Une fois le bug de boucle infinie corrigé dans
+`FoxBrain.kt` (ajout du cas `SleepDetected -> tvIsPaused = true`), il
+restait à reconfirmer la condition `ASLEEP` en conditions réelles (BPM au
+repos) puis un test de stabilité de 30 minutes — étape qui dépend
+entièrement de la disponibilité physique de l'utilisateur avec la montre au
+poignet, et ne peut pas être avancée sans lui. Pendant ce temps, un audit
+complet de l'application (navigation, écrans, réglages, pairing TV,
+connexion montre) a révélé plusieurs lacunes concrètes qui empêchent l'app
+d'être utilisable de bout en bout par un utilisateur réel : écran Réglages
+absent, onboarding qui se relance à chaque lancement, format de PIN
+d'appairage incohérent entre deux écrans.
+
+**Décision** — Mettre la Phase 1 en pause documentée (le correctif
+`FoxBrain.kt` est conservé, rien n'est perdu ni annulé, seul le critère de
+sortie matériel reste à reconfirmer) et ouvrir un chantier prioritaire
+temporaire, transverse à plusieurs phases futures (1 partiellement, 4, 6,
+7), visant une application complète et cohérente pour un utilisateur réel.
+La Phase 1 reprend formellement dès que ce chantier est terminé.
+
+**Alternatives étudiées**
+- *Attendre la disponibilité de l'utilisateur avec la montre avant de
+  continuer* — écarté : bloquerait toute progression sur des lacunes UI
+  déjà identifiées et totalement indépendantes du test matériel restant.
+- *Sauter directement à la Phase 3 (refactor architectural)* — écarté :
+  contredirait le Principe directeur 2 ("stabiliser puis seulement
+  refactorer") plus profondément que cette dérogation ; refactorer
+  l'architecture sur une base encore incomplète fonctionnellement serait un
+  refactor à l'aveugle sur des écrans qui vont encore changer.
+- *Renuméroter les phases pour intégrer ce chantier proprement* — écarté
+  pour l'instant : la portée exacte des lacunes à combler n'était pas
+  connue avant l'audit ; une renumérotation prématurée risquerait de devoir
+  être refaite. Le chantier reste donc volontairement hors séquence
+  numérotée, documenté comme exception explicite plutôt que dissimulé.
+
+**Conséquences**
+- La Phase 1 n'est ni annulée ni invalidée : son critère de sortie
+  spécifique et son DoD complet restent dus, seulement reportés.
+- Le chantier prioritaire suit un DoD allégé (pas de couverture de tests
+  exhaustive exigée) — assumé explicitement pour ne pas ralentir la
+  correction de bugs UI/UX bloquants pendant que le socle Brain n'est pas
+  encore dans sa forme finale (Phase 5).
+- Toute modification pendant ce chantier doit préserver le correctif
+  `FoxBrain.kt` (`SleepDetected -> tvIsPaused = true`) et ne doit pas
+  réintroduire la boucle infinie qu'il corrige.
+
+---
+
+## ADR-011 — Abstraction WatchTransport et support Garmin Connect IQ
+
+**Statut** — Adopté côté Android, 2026-08-07. Validation matérielle en
+attente (l'utilisateur n'a pas encore de montre Garmin).
+
+**Contexte** — L'utilisateur a exprimé l'objectif de connecter FoxOFF à
+n'importe quelle marque de montre (voir mémoire de session), en conflit
+avec ADR-001 ("FoxOFF cible exclusivement Android"). Après avoir écarté un
+premier chantier Apple Watch/iOS (bloqué : Xcode ne tourne que sur macOS,
+aucun Mac disponible), l'utilisateur a choisi de commencer par Garmin — le
+SDK Connect IQ tourne nativement sur Windows, contrairement à Xcode,
+rendant le développement réellement possible dans cet environnement.
+
+Toute la logique de présence/reconnexion (`WatchPresenceCoordinator`,
+`FoxCore.discoverWatch()`) appelait directement l'API GMS Wearable (Data
+Layer), spécifique à Wear OS. `PhoneWearListenerService` (point d'entrée
+GMS `BIND_LISTENER`) publiait déjà des `SensorEvent` agnostiques de la
+marque — la frontière brand-agnostique existait donc déjà en aval, mais pas
+en amont.
+
+**Décision** — Introduire une interface `WatchTransport`
+(`connectedDevices()`, `requestInfo(deviceId)`) dans un nouveau package
+`core/watch/`, avec deux implémentations :
+- `WearOsTransport` : extraction directe des appels GMS existants, **zéro
+  changement de comportement** (build + suite de tests complète vérifiés
+  sans régression).
+- `GarminTransport` : basé sur le Connect IQ Mobile SDK
+  (`com.garmin.connectiq:ciq-companion-app-sdk`, Maven Central, gratuit —
+  **pas** le "Companion SDK"/Health API, celui-ci commercial et écarté).
+  Signatures d'API vérifiées par décompilation du AAR réel (`javap`), pas
+  devinées.
+
+`WatchSettings` mémorise la marque active (`WatchBrand`, `WEAR_OS` par
+défaut — rétrocompatible avec les installations existantes).
+`FoxCore.initialize()` choisit le transport en fonction de ce réglage. Un
+nouvel écran "Changer de montre" dans Réglages permet de rebasculer entre
+marques (efface l'appareil connu, redémarre l'app pour appliquer le
+changement — même pattern que `resetOnboarding()`).
+
+Côté montre, un projet Connect IQ séparé (`garmin/`, hors build Gradle —
+toolchain `monkeyc` distincte) implémente la lecture BPM
+(`Activity.getActivityInfo().currentHeartRate`, pas de session capteur à
+gérer) et l'envoi périodique en arrière-plan via
+`Background.ServiceDelegate.onTemporalEvent()` (5 minutes — le minimum
+autorisé par l'API Garmin, même granularité que le mode passif Wear OS déjà
+en place). Compilé et vérifié en typecheck strict contre 3 appareils réels
+(vivoactive4s/5/6), pas seulement écrit.
+
+**Alternatives étudiées**
+- *Companion SDK / Health API Garmin* — écarté : accès commercial,
+  nécessite un accord partenaire avec Garmin, incompatible avec un projet
+  personnel.
+- *Reporter tout le chantier multi-marques à plus tard* — écarté pour la
+  partie Garmin spécifiquement : contrairement à iOS, aucun blocage
+  matériel/logiciel ne l'empêchait (SDK gratuit, Windows, pas de Mac
+  requis) ; seule l'absence de montre physique limite la validation finale.
+- *Étendre `WatchPresenceEngine`/`WatchReconnectionEngine` directement* —
+  écarté : ces classes sont déjà pures et agnostiques (elles ne
+  connaissent que des lambdas d'effets), aucune modification n'y était
+  nécessaire — seul le câblage GMS en amont (`WatchPresenceCoordinator`,
+  `FoxCore.discoverWatch()`) devait être abstrait.
+
+**Conséquences**
+- ADR-001 est partiellement superseded pour le téléphone/montre (pas pour
+  la TV, voir ADR-005 — Android TV Remote v2 reste la seule cible TV) :
+  FoxOFF vise désormais plusieurs marques de montre sur téléphone Android,
+  pas plusieurs plateformes téléphone (iOS reste en pause, voir mémoire de
+  session).
+- Le format exact du message BPM reçu côté Android depuis Garmin
+  (`List<Object>` — Dictionary Monkey C en position 0) est une hypothèse
+  documentée dans `GarminTransport.kt`, **non vérifiée sur matériel réel**
+  — à confirmer/ajuster à la première nuit de test avec une vraie montre.
+- Nouvelle dépendance `com.garmin.connectiq:ciq-companion-app-sdk` sur
+  `:app`, et nouveau dossier `garmin/` à la racine du dépôt, hors du build
+  Gradle (toolchain Connect IQ distincte — SDK Manager + `monkeyc`/`monkeydo`
+  en CLI, installés localement).
 
 ---
 

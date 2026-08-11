@@ -95,7 +95,7 @@ com.projectfox.foxoff
 │   ├── TvConnectionManager.kt      (⚠ orphelin, cf. §6)
 │   ├── TvCommandSender.kt          (⚠ orphelin, cf. §6)
 │   ├── pairing/TvIdentity.kt       (identité TLS — nouvelle implémentation)
-│   ├── pairing/TvPairingClient.kt / PairingSession.kt
+│   ├── pairing/TvPairingClient.kt
 │   ├── protobuf/PoloFactory.kt, RemoteFactory.kt (⚠ stub vide), TvConstants.kt
 │   └── remote/TvRemoteClient.kt    (canal de contrôle réellement utilisé)
 ├── tvlab/                          — écran de diagnostic manuel (hors flux prod)
