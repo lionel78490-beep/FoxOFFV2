@@ -1,0 +1,27 @@
+<iq:manifest xmlns:iq="http://www.garmin.com/xml/connectiq" version="1">
+    <iq:application id="b7e6f8a2-9c4d-4e1a-8f3b-2d5e6a7c9f10" type="watch-app" name="@Strings.AppName" entry="FoxOffGarminApp" minSdkVersion="3.2.0" launcherIcon="@Drawables.LauncherIcon">
+        <!--
+          Appareils couverts par les définitions déjà téléchargées dans le
+          SDK Manager (gamme vivoactive). À COMPLÉTER avec le modèle exact
+          de l'utilisateur (Fenix/Forerunner/Venu) une fois choisi : ouvrir
+          le SDK Manager, onglet Devices, cocher le modèle, puis ajouter son
+          <iq:product id="..."/> ici.
+        -->
+        <iq:products>
+            <iq:product id="vivoactive4s"/>
+            <iq:product id="vivoactive5"/>
+            <iq:product id="vivoactive6"/>
+        </iq:products>
+        <iq:permissions>
+            <!-- Background : ServiceDelegate périodique (~5 min min, voir
+                 FoxOffGarminServiceDelegate). Communications : AppMessage
+                 vers le téléphone (voir GarminTransport.kt côté Android). -->
+            <iq:uses-permission id="Background"/>
+            <iq:uses-permission id="Communications"/>
+        </iq:permissions>
+        <iq:languages>
+            <iq:language>fre</iq:language>
+            <iq:language>eng</iq:language>
+        </iq:languages>
+    </iq:application>
+</iq:manifest>
