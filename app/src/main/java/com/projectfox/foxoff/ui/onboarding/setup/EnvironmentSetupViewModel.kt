@@ -39,7 +39,7 @@ class EnvironmentSetupViewModel : ViewModel() {
 
             // Monitor TV
             launch {
-                com.projectfox.foxoff.core.application.FoxCore.tvEngine?.state?.collect { tv ->
+                com.projectfox.foxoff.core.application.FoxCore.tvEngine?.activeDevice?.collect { tv ->
                     if (tv != null && tv.status == com.projectfox.foxoff.tv.TvConnectionStatus.CONNECTED) {
                         com.projectfox.foxoff.core.logging.FoxLogger.i("FOX-SETUP | Event: TV Connected (${tv.name})")
                         updateStep("tv", SetupStepStatus.COMPLETED, tv.name, 1f)

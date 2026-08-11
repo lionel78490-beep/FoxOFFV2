@@ -3,9 +3,11 @@ package com.projectfox.foxoff.ui.onboarding
 import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.core.tween
 import androidx.compose.runtime.*
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
 import com.projectfox.foxoff.ui.onboarding.screens.*
 
 @Composable
@@ -37,7 +39,15 @@ fun OnboardingNavigation(onFinish: () -> Unit) {
             enterTransition = { slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.Start, tween(700)) },
             exitTransition = { slideOutOfContainer(AnimatedContentTransitionScope.SlideDirection.Start, tween(700)) }
         ) {
-            PermissionScreen(onNext = { navController.navigate("watch_detection") })
+            PermissionScreen(onNext = { navController.navigate("active_hours") })
+        }
+
+        composable(
+            "active_hours",
+            enterTransition = { slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.Start, tween(700)) },
+            exitTransition = { slideOutOfContainer(AnimatedContentTransitionScope.SlideDirection.Start, tween(700)) }
+        ) {
+            ActiveHoursScreen(onNext = { navController.navigate("watch_detection") })
         }
 
         composable(
@@ -53,15 +63,22 @@ fun OnboardingNavigation(onFinish: () -> Unit) {
             enterTransition = { slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.Start, tween(700)) },
             exitTransition = { slideOutOfContainer(AnimatedContentTransitionScope.SlideDirection.Start, tween(700)) }
         ) {
-            TvDetectionScreen(onNext = { navController.navigate("tv_pairing") })
+            TvDetectionScreen(
+                onNext = { deviceId -> navController.navigate("tv_pairing/$deviceId") },
+                onSkip = { navController.navigate("validation") }
+            )
         }
 
         composable(
-            "tv_pairing",
+            "tv_pairing/{deviceId}",
+            arguments = listOf(navArgument("deviceId") { type = NavType.StringType }),
             enterTransition = { slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.Start, tween(700)) },
             exitTransition = { slideOutOfContainer(AnimatedContentTransitionScope.SlideDirection.Start, tween(700)) }
-        ) {
-            TvPairingScreen(onNext = { navController.navigate("validation") })
+        ) { backStackEntry ->
+            TvPairingScreen(
+                deviceId = backStackEntry.arguments?.getString("deviceId"),
+                onNext = { navController.navigate("validation") }
+            )
         }
 
         composable(

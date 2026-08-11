@@ -26,8 +26,6 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.projectfox.foxoff.ui.onboarding.components.*
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.delay
 
 @Composable
 fun SplashScreen(onAnimationFinished: () -> Unit) {
@@ -78,11 +76,13 @@ fun WelcomeScreen(onNext: () -> Unit) {
 @Composable
 fun PermissionScreen(onNext: () -> Unit) {
     val context = LocalContext.current
-    
+
+    // POST_NOTIFICATIONS n'est PAS incluse ici : elle est demandée à part,
+    // à la suite de cette première demande (voir resolveBackgroundStep),
+    // jamais mélangée dans le même appel système.
     val permissions = remember {
         mutableListOf<String>().apply {
             if (android.os.Build.VERSION.SDK_INT >= 33) {
-                add(android.Manifest.permission.POST_NOTIFICATIONS)
                 add(android.Manifest.permission.NEARBY_WIFI_DEVICES)
             }
             if (android.os.Build.VERSION.SDK_INT >= 31) {
@@ -91,13 +91,76 @@ fun PermissionScreen(onNext: () -> Unit) {
         }
     }
 
-    var permissionStatus by remember { 
-        mutableStateOf(permissions.associateWith { 
-            ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED 
-        }) 
+    var permissionStatus by remember {
+        mutableStateOf(permissions.associateWith {
+            ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
+        })
     }
 
-    val launcher = androidx.activity.compose.rememberLauncherForActivityResult(
+    // null = pas encore résolu (ni activé, ni décliné) ; true/false = choix final.
+    // Repris depuis le stockage au cas où l'écran serait recréé après que le
+    // choix ait déjà été fait (ex: rotation, recréation de l'Activity).
+    var backgroundChoice by remember {
+        mutableStateOf(
+            if (com.projectfox.foxoff.core.application.BackgroundServiceSettings.hasSeenPrompt(context)) {
+                com.projectfox.foxoff.core.application.BackgroundServiceSettings.isEnabled(context)
+            } else {
+                null
+            }
+        )
+    }
+    var backgroundDenied by remember { mutableStateOf(false) }
+
+    val notificationLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        com.projectfox.foxoff.core.application.BackgroundServiceSettings.setEnabled(context, granted)
+        com.projectfox.foxoff.core.application.BackgroundServiceSettings.markPromptSeen(context)
+        backgroundChoice = granted
+        backgroundDenied = !granted
+        if (granted) {
+            com.projectfox.foxoff.core.logging.FoxLogger.i("FOX-PERM | Notifications accordées -> surveillance activée")
+            androidx.core.content.ContextCompat.startForegroundService(
+                context,
+                android.content.Intent(context, com.projectfox.foxoff.core.service.FoxForegroundService::class.java)
+            )
+        } else {
+            com.projectfox.foxoff.core.logging.FoxLogger.w("FOX-PERM | Notifications refusées -> surveillance non activée")
+        }
+    }
+
+    // Deuxième étape de la séquence guidée : appelée juste après la
+    // résolution de la demande Bluetooth/Wi-Fi. Ne redemande jamais si
+    // l'utilisateur a déjà répondu (ex: "Continuer sans surveillance" tapé
+    // avant, ou choix déjà fait lors d'une précédente composition).
+    fun resolveBackgroundStep() {
+        if (com.projectfox.foxoff.core.application.BackgroundServiceSettings.hasSeenPrompt(context)) {
+            return
+        }
+
+        val notificationsNeeded = android.os.Build.VERSION.SDK_INT >= 33
+        val alreadyGranted = !notificationsNeeded ||
+                ContextCompat.checkSelfPermission(
+                    context,
+                    android.Manifest.permission.POST_NOTIFICATIONS
+                ) == PackageManager.PERMISSION_GRANTED
+
+        if (alreadyGranted) {
+            // Rien à demander (version d'Android sans permission requise, ou
+            // déjà accordée) : l'intention peut être enregistrée directement.
+            com.projectfox.foxoff.core.application.BackgroundServiceSettings.setEnabled(context, true)
+            com.projectfox.foxoff.core.application.BackgroundServiceSettings.markPromptSeen(context)
+            backgroundChoice = true
+            androidx.core.content.ContextCompat.startForegroundService(
+                context,
+                android.content.Intent(context, com.projectfox.foxoff.core.service.FoxForegroundService::class.java)
+            )
+        } else {
+            notificationLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
+
+    val accessLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions()
     ) { results ->
         permissionStatus = results
@@ -105,9 +168,35 @@ fun PermissionScreen(onNext: () -> Unit) {
             if (granted) com.projectfox.foxoff.core.logging.FoxLogger.i("FOX-PERM | Permission accordée : $perm")
             else com.projectfox.foxoff.core.logging.FoxLogger.w("FOX-PERM | Permission refusée : $perm")
         }
+        // Séquence guidée : une fois Bluetooth/Wi-Fi résolus, on enchaîne
+        // immédiatement sur la notification de surveillance.
+        resolveBackgroundStep()
     }
 
-    val allGranted = permissionStatus.values.all { it }
+    fun grantAllAccess() {
+        if (permissions.isNotEmpty()) {
+            com.projectfox.foxoff.core.logging.FoxLogger.i("FOX-PERM | Lancement demande globale")
+            accessLauncher.launch(permissions.toTypedArray())
+        } else {
+            // Rien à demander à cette étape (ex: SDK trop ancien) : passe
+            // directement à la surveillance en arrière-plan.
+            resolveBackgroundStep()
+        }
+    }
+
+    fun declineBackgroundNow() {
+        com.projectfox.foxoff.core.application.BackgroundServiceSettings.setEnabled(context, false)
+        com.projectfox.foxoff.core.application.BackgroundServiceSettings.markPromptSeen(context)
+        backgroundChoice = false
+        backgroundDenied = false
+    }
+
+    val corePermissionsGranted = permissionStatus.values.all { it }
+    // Le bouton ne devient "Continuer" qu'une fois TOUT résolu : les
+    // permissions de base ET le choix de surveillance (explicite ou via la
+    // séquence guidée) — jamais avant, sinon la notification ne serait
+    // jamais demandée si Bluetooth/Wi-Fi étaient déjà accordés.
+    val readyToContinue = corePermissionsGranted && backgroundChoice != null
 
     FoxGradientBackground {
         Column(modifier = Modifier.fillMaxSize().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -116,10 +205,20 @@ fun PermissionScreen(onNext: () -> Unit) {
             FoxTitle(text = "Autorisations")
             Spacer(modifier = Modifier.height(16.dp))
             FoxSubtitle(text = "FoxOFF nécessite ces accès pour fonctionner correctement.")
-            
+
             Spacer(modifier = Modifier.height(32.dp))
-            
-            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+
+            // Zone défilante : cartes de permissions + section surveillance.
+            // Le titre/sous-titre et le bouton final restent fixes, pour que
+            // le bouton reste toujours atteignable sur un petit écran même
+            // avec cette section supplémentaire.
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
                 if (android.os.Build.VERSION.SDK_INT >= 31) {
                     PermissionStatusCard(
                         icon = "⌚",
@@ -128,7 +227,7 @@ fun PermissionScreen(onNext: () -> Unit) {
                         isGranted = permissionStatus[android.Manifest.permission.BLUETOOTH_CONNECT] == true
                     )
                 }
-                
+
                 if (android.os.Build.VERSION.SDK_INT >= 33) {
                     PermissionStatusCard(
                         icon = "📡",
@@ -138,25 +237,25 @@ fun PermissionScreen(onNext: () -> Unit) {
                     )
                 }
 
-                if (android.os.Build.VERSION.SDK_INT >= 33) {
-                    PermissionStatusCard(
-                        icon = "🔔",
-                        title = "Notifications",
-                        description = "Alerter lors de la pause TV.",
-                        isGranted = permissionStatus[android.Manifest.permission.POST_NOTIFICATIONS] == true
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(Color.White.copy(alpha = 0.05f))
+                        .padding(16.dp)
+                ) {
+                    com.projectfox.foxoff.ui.settings.BackgroundMonitoringInfoSection(
+                        resolvedChoice = backgroundChoice,
+                        deniedMessage = backgroundDenied,
+                        onDeclineNow = { declineBackgroundNow() }
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.weight(1f))
-            
-            if (!allGranted) {
+            if (!readyToContinue) {
                 FoxButton(
                     text = "Accorder les accès",
-                    onClick = { 
-                        com.projectfox.foxoff.core.logging.FoxLogger.i("FOX-PERM | Lancement demande globale")
-                        launcher.launch(permissions.toTypedArray()) 
-                    }
+                    onClick = { grantAllAccess() }
                 )
             } else {
                 FoxButton(
@@ -193,6 +292,107 @@ fun PermissionStatusCard(icon: String, title: String, description: String, isGra
     }
 }
 
+/**
+ * Créneaux horaires prédéfinis dans lesquels la surveillance a le droit de
+ * tourner (voir ActiveHoursSettings) — demande explicite de l'utilisateur :
+ * la surveillance tournait "du matin au soir" sans utilité en dehors de
+ * l'endormissement. "20h – 8h" pré-coché par défaut (cas d'usage principal,
+ * modifiable avant de continuer et plus tard depuis Réglages).
+ */
+@Composable
+fun ActiveHoursScreen(onNext: () -> Unit) {
+    val context = LocalContext.current
+    var selectedSlots by remember {
+        mutableStateOf(
+            if (com.projectfox.foxoff.core.application.ActiveHoursSettings.hasSeenPrompt(context)) {
+                com.projectfox.foxoff.core.application.ActiveHoursSettings.getSelectedSlots(context)
+            } else {
+                setOf(com.projectfox.foxoff.core.application.ActiveHoursSlot.EVENING_NIGHT)
+            }
+        )
+    }
+
+    fun toggle(slot: com.projectfox.foxoff.core.application.ActiveHoursSlot) {
+        selectedSlots = if (slot in selectedSlots) selectedSlots - slot else selectedSlots + slot
+    }
+
+    fun confirmAndContinue() {
+        com.projectfox.foxoff.core.application.ActiveHoursSettings.setSelectedSlots(context, selectedSlots)
+        com.projectfox.foxoff.core.application.ActiveHoursSettings.markPromptSeen(context)
+        onNext()
+    }
+
+    FoxGradientBackground {
+        Column(modifier = Modifier.fillMaxSize().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            FoxProgressConnection(step = 3)
+            Spacer(modifier = Modifier.height(24.dp))
+            FoxTitle(text = "Créneaux horaires")
+            Spacer(modifier = Modifier.height(16.dp))
+            FoxSubtitle(text = "Choisissez quand FoxOFF doit surveiller votre sommeil, pour ne " +
+                    "pas tourner inutilement le reste de la journée. Modifiable plus tard " +
+                    "dans Réglages.")
+
+            Spacer(modifier = Modifier.height(32.dp))
+
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                com.projectfox.foxoff.core.application.ActiveHoursSlot.entries.forEach { slot ->
+                    ActiveHoursSlotCard(
+                        slot = slot,
+                        isSelected = slot in selectedSlots,
+                        onClick = { toggle(slot) }
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            FoxButton(text = "Continuer", onClick = { confirmAndContinue() })
+        }
+    }
+}
+
+@Composable
+fun ActiveHoursSlotCard(
+    slot: com.projectfox.foxoff.core.application.ActiveHoursSlot,
+    isSelected: Boolean,
+    onClick: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(24.dp))
+            .background(if (isSelected) Color.White.copy(alpha = 0.15f) else Color.White.copy(alpha = 0.05f))
+            .border(
+                width = 1.dp,
+                color = if (isSelected) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.1f),
+                shape = RoundedCornerShape(24.dp)
+            )
+            .clickable { onClick() }
+            .padding(20.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(text = "🌙", fontSize = 28.sp)
+            Spacer(modifier = Modifier.width(16.dp))
+            Text(
+                text = slot.label,
+                color = Color.White,
+                fontWeight = FontWeight.Bold,
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.weight(1f)
+            )
+            if (isSelected) {
+                Icon(Icons.Default.CheckCircle, null, tint = Color.Green, modifier = Modifier.size(28.dp))
+            }
+        }
+    }
+}
+
 @Composable
 fun WatchDetectionScreen(onNext: () -> Unit) {
     val core = com.projectfox.foxoff.core.application.FoxCore
@@ -215,7 +415,7 @@ fun WatchDetectionScreen(onNext: () -> Unit) {
 
     FoxGradientBackground {
         Column(modifier = Modifier.fillMaxSize().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            FoxProgressConnection(step = 3)
+            FoxProgressConnection(step = 4)
             Spacer(modifier = Modifier.height(24.dp))
             FoxTitle(text = "Détection de votre montre")
             Spacer(modifier = Modifier.height(16.dp))
@@ -255,17 +455,15 @@ fun WatchDetectionScreen(onNext: () -> Unit) {
 }
 
 @Composable
-fun TvDetectionScreen(onNext: () -> Unit) {
+fun TvDetectionScreen(onNext: (String) -> Unit, onSkip: () -> Unit) {
     val core = com.projectfox.foxoff.core.application.FoxCore
     val tvEngine = core.tvEngine
     val discoveredDevices by (tvEngine?.discoveredDevices?.collectAsState() ?: remember { mutableStateOf(emptyList()) })
-    
-    var selectedDevice by remember { mutableStateOf<com.projectfox.foxoff.tv.TvDevice?>(null) }
-    var testStatus by remember { mutableStateOf<String?>(null) } // null, TESTING, SUCCESS, ERROR
-    
-    val isSearching = discoveredDevices.isEmpty() && selectedDevice == null
 
-    val scope = rememberCoroutineScope()
+    var selectedDevice by remember { mutableStateOf<com.projectfox.foxoff.tv.TvDevice?>(null) }
+    var selectedDeviceId by remember { mutableStateOf<String?>(null) }
+
+    val isSearching = discoveredDevices.isEmpty() && selectedDevice == null
 
     LaunchedEffect(Unit) {
         tvEngine?.initialize()
@@ -278,7 +476,7 @@ fun TvDetectionScreen(onNext: () -> Unit) {
                 .padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            FoxProgressConnection(step = 4)
+            FoxProgressConnection(step = 5)
             Spacer(modifier = Modifier.height(24.dp))
             FoxTitle(text = "Configuration TV")
             Spacer(modifier = Modifier.height(16.dp))
@@ -313,39 +511,34 @@ fun TvDetectionScreen(onNext: () -> Unit) {
                         TvDiscoveryCard(
                             device = device,
                             isSelected = selectedDevice?.id == device.id,
-                            isTesting = selectedDevice?.id == device.id && testStatus == "TESTING",
-                            testResult = if (selectedDevice?.id == device.id) testStatus else null,
                             onClick = {
                                 if (selectedDevice?.id != device.id) {
                                     selectedDevice = device
-                                    testStatus = "TESTING"
                                     com.projectfox.foxoff.core.logging.FoxLogger.i("FOX-TV | TV sélectionnée : ${device.name}")
-                                    
-                                    scope.launch {
-                                        delay(2000)
-                                        testStatus = "SUCCESS"
-                                        com.projectfox.foxoff.core.logging.FoxLogger.i("FOX-TV | Compatible FoxOFF")
-                                        tvEngine?.selectDevice(device)
-                                        com.projectfox.foxoff.core.logging.FoxLogger.i("FOX-TV | TV enregistrée comme télévision principale")
+                                    selectedDeviceId = when (val outcome = tvEngine?.selectDevice(device)) {
+                                        is com.projectfox.foxoff.tv.TvSelectDeviceOutcome.NewPairingStarted -> outcome.deviceId
+                                        is com.projectfox.foxoff.tv.TvSelectDeviceOutcome.AlreadyAssociated -> outcome.deviceId
+                                        else -> null
                                     }
+                                    com.projectfox.foxoff.core.logging.FoxLogger.i("FOX-TV | TV enregistrée comme télévision principale")
                                 }
                             }
                         )
                     }
                 }
             }
-            
+
             Spacer(modifier = Modifier.height(24.dp))
 
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 FoxButton(
-                    text = "Continuer", 
-                    onClick = onNext, 
-                    enabled = testStatus == "SUCCESS"
+                    text = "Continuer",
+                    onClick = { selectedDeviceId?.let(onNext) },
+                    enabled = selectedDeviceId != null
                 )
-                
+
                 TextButton(
-                    onClick = onNext,
+                    onClick = onSkip,
                     modifier = Modifier.padding(top = 8.dp)
                 ) {
                     Text("Configurer plus tard", color = Color.Gray, style = MaterialTheme.typography.labelMedium)
@@ -373,10 +566,11 @@ fun SetupCompleteScreen(onFinish: () -> Unit) {
 }
 
 @Composable
-fun TvPairingScreen(onNext: () -> Unit) {
+fun TvPairingScreen(deviceId: String?, onNext: () -> Unit) {
     val core = com.projectfox.foxoff.core.application.FoxCore
     val tvEngine = core.tvEngine
-    val tvState by (tvEngine?.state?.collectAsState() ?: remember { mutableStateOf(null) })
+    val pairedDevices by (tvEngine?.pairedDevices?.collectAsState() ?: remember { mutableStateOf(emptyList()) })
+    val tvState = pairedDevices.firstOrNull { it.id == deviceId }
     var pinValue by remember { mutableStateOf("") }
 
     LaunchedEffect(Unit) {
@@ -392,7 +586,7 @@ fun TvPairingScreen(onNext: () -> Unit) {
 
     FoxGradientBackground {
         Column(modifier = Modifier.fillMaxSize().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            FoxProgressConnection(step = 5)
+            FoxProgressConnection(step = 6)
             Spacer(modifier = Modifier.height(24.dp))
             FoxTitle(text = "Appairage de la télévision")
             Spacer(modifier = Modifier.height(16.dp))
@@ -435,7 +629,7 @@ fun TvPairingScreen(onNext: () -> Unit) {
                                 unfocusedBorderColor = Color.Gray
                             )
                         )
-                        FoxButton(text = "Valider", onClick = { tvEngine?.submitPin(pinValue) }, enabled = pinValue.length == 6)
+                        FoxButton(text = "Valider", onClick = { tvState?.let { tvEngine?.submitPin(pinValue, it.id) } }, enabled = pinValue.length == 6)
                     }
                 }
                 com.projectfox.foxoff.tv.TvConnectionStatus.CONNECTING -> {
@@ -480,7 +674,7 @@ fun PreviewWatch() { com.projectfox.foxoff.ui.theme.FoxTheme { WatchDetectionScr
 
 @androidx.compose.ui.tooling.preview.Preview
 @Composable
-fun PreviewTv() { com.projectfox.foxoff.ui.theme.FoxTheme { TvDetectionScreen {} } }
+fun PreviewTv() { com.projectfox.foxoff.ui.theme.FoxTheme { TvDetectionScreen(onNext = {}, onSkip = {}) } }
 
 @androidx.compose.ui.tooling.preview.Preview
 @Composable
@@ -494,8 +688,6 @@ fun PreviewSetup() { com.projectfox.foxoff.ui.theme.FoxTheme { SetupCompleteScre
 fun TvDiscoveryCard(
     device: com.projectfox.foxoff.tv.TvDevice,
     isSelected: Boolean = false,
-    isTesting: Boolean = false,
-    testResult: String? = null,
     onClick: () -> Unit
 ) {
     Box(
@@ -540,7 +732,7 @@ fun TvDiscoveryCard(
                     )
                 }
 
-                if (isSelected && testResult == "SUCCESS") {
+                if (isSelected) {
                     Icon(
                         imageVector = Icons.Default.CheckCircle,
                         contentDescription = null,
@@ -582,28 +774,21 @@ fun TvDiscoveryCard(
 
             if (isSelected) {
                 Spacer(modifier = Modifier.height(16.dp))
-                if (isTesting) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Text("Vérification de la compatibilité...", color = Color.White, style = MaterialTheme.typography.bodySmall)
-                    }
-                } else if (testResult != null) {
-                    Text(
-                        text = if (testResult == "SUCCESS") "🟢 Compatible FoxOFF" else "🔴 Erreur de connexion",
-                        color = if (testResult == "SUCCESS") Color.Green else Color.Red,
-                        style = MaterialTheme.typography.bodySmall,
-                        fontWeight = FontWeight.Bold
-                    )
-                } else {
-                    Button(
-                        onClick = onClick,
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
-                    ) {
-                        Text("Utiliser cette TV", fontWeight = FontWeight.Bold)
-                    }
+                Text(
+                    text = "✅ Sélectionnée",
+                    color = Color.Green,
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.Bold
+                )
+            } else {
+                Spacer(modifier = Modifier.height(16.dp))
+                Button(
+                    onClick = onClick,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                ) {
+                    Text("Utiliser cette TV", fontWeight = FontWeight.Bold)
                 }
             }
         }

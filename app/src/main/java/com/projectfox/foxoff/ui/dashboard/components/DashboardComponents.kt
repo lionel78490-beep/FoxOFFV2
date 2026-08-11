@@ -4,6 +4,7 @@ import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -20,6 +21,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.projectfox.foxoff.brain.SleepState
+import com.projectfox.foxoff.core.application.ActiveHoursSlot
+import com.projectfox.foxoff.tv.TvConnectionStatus
 import com.projectfox.foxoff.ui.theme.FoxBlackSurface
 import com.projectfox.foxoff.ui.theme.FoxGradient
 import com.projectfox.foxoff.ui.theme.FoxHeartRed
@@ -85,8 +88,8 @@ fun MainStatusCard(status: String, color: Color) {
 @Composable
 fun PremiumHeartRateCard(
     bpm: Int?,
-    min: Int,
-    max: Int,
+    min: Int?,
+    max: Int?,
     time: LocalTime?
 ) {
     val formatter = DateTimeFormatter.ofPattern("HH:mm:ss")
@@ -155,8 +158,8 @@ fun PremiumHeartRateCard(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                StatusInfoItem("Min", min.toString())
-                StatusInfoItem("Max", max.toString())
+                StatusInfoItem("Min", min?.toString() ?: "--")
+                StatusInfoItem("Max", max?.toString() ?: "--")
                 StatusInfoItem("Dernier", time?.format(formatter) ?: "--:--:--")
             }
         }
@@ -168,8 +171,13 @@ fun DeviceCard(
     icon: String,
     name: String,
     isConnected: Boolean,
+    isKnown: Boolean = false,
     battery: String,
     type: String,
+    // Remplace le libellé de statut calculé (Connectée/Hors ligne/Déconnectée)
+    // quand une sous-phase est en cours (Vérification, Reconnexion) — voir
+    // WatchConnectionState. null en fonctionnement normal.
+    statusOverride: String? = null,
     onAssociateClick: () -> Unit = {}
 ) {
     PremiumDashboardCard {
@@ -183,11 +191,21 @@ fun DeviceCard(
                         modifier = Modifier
                             .size(8.dp)
                             .clip(RoundedCornerShape(4.dp))
-                            .background(if (isConnected) Color.Green else Color.Red)
+                            .background(
+                                when {
+                                    isConnected -> Color.Green
+                                    isKnown -> Color(0xFFFFA000)
+                                    else -> Color.Red
+                                }
+                            )
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = if (isConnected) "Connectée • $battery" else "Déconnectée",
+                        text = statusOverride ?: when {
+                            isConnected -> "Connectée • $battery"
+                            isKnown -> "Hors ligne"
+                            else -> "Déconnectée"
+                        },
                         style = MaterialTheme.typography.bodySmall,
                         color = Color.Gray
                     )
@@ -200,7 +218,7 @@ fun DeviceCard(
                     modifier = Modifier.border(1.dp, Color.White.copy(alpha = 0.2f), RoundedCornerShape(12.dp)),
                     contentPadding = PaddingValues(horizontal = 12.dp)
                 ) {
-                    Text("Associer", fontSize = 12.sp, color = Color.White)
+                    Text(if (isKnown) "Reconnecter" else "Associer", fontSize = 12.sp, color = Color.White)
                 }
             } else {
                 Text(text = type, style = MaterialTheme.typography.labelSmall, color = Color.DarkGray)
@@ -212,26 +230,46 @@ fun DeviceCard(
 @Composable
 fun TvDashboardCard(
     name: String,
-    isConnected: Boolean,
+    status: TvConnectionStatus?,
     currentApp: String,
     lastCommand: String,
     lastCommandTime: LocalTime?
 ) {
     val formatter = DateTimeFormatter.ofPattern("HH:mm")
+    val isConnected = status == TvConnectionStatus.CONNECTED
+    val hasKnownDevice = status != null && status != TvConnectionStatus.DISCONNECTED
+    val displayName = if (hasKnownDevice) name else "Aucune TV associée"
+    // currentApp n'est jamais réellement renseigné par FoxTvEngine (aucun
+    // chemin ne met à jour TvDevice.currentApp après connexion) : ne jamais
+    // l'afficher en suffixe, ça produirait "Connectée • Aucune".
+    val (statusLabel, statusColor) = when (status) {
+        TvConnectionStatus.CONNECTED -> "Connectée" to Color.Green
+        TvConnectionStatus.OFFLINE, TvConnectionStatus.ERROR -> "Hors ligne" to Color(0xFFFFA000)
+        TvConnectionStatus.CONNECTING,
+        TvConnectionStatus.SEARCHING -> "Connexion..." to Color.Yellow
+        TvConnectionStatus.PAIRING_REQUIRED,
+        TvConnectionStatus.PAIRING_SENT -> "Appairage requis" to Color(0xFFFF5252)
+        TvConnectionStatus.IDENTITY_MISMATCH -> "Identité différente" to Color(0xFFFF5252)
+        TvConnectionStatus.CONFIRMATION_REQUIRED -> "Vérification requise" to Color(0xFFFFA000)
+        else -> null to Color.Gray
+    }
+
     PremiumDashboardCard {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(text = "📺", fontSize = 32.sp)
             Spacer(modifier = Modifier.width(20.dp))
             Column {
-                Text(text = name, fontWeight = FontWeight.Bold, color = Color.White)
-                Text(
-                    text = if (isConnected) "Connectée • $currentApp" else "Recherche...",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = if (isConnected) Color.Green else Color.Yellow
-                )
+                Text(text = displayName, fontWeight = FontWeight.Bold, color = Color.White)
+                if (statusLabel != null) {
+                    Text(
+                        text = statusLabel,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = statusColor
+                    )
+                }
             }
         }
-        
+
         if (isConnected && lastCommand != "Aucune") {
             Spacer(modifier = Modifier.height(16.dp))
             Box(
@@ -314,6 +352,42 @@ fun FoxAnalysisCard(
             color = Color.White.copy(alpha = 0.7f),
             lineHeight = 20.sp
         )
+    }
+}
+
+/**
+ * Créneau(x) horaire(s) dans lesquels la surveillance a le droit de tourner
+ * (voir ActiveHoursSettings) — affiché sur l'Accueil pour que ce soit
+ * visible en un coup d'œil, sans devoir aller dans Réglages. Ensemble vide
+ * = aucune restriction configurée (comportement historique, surveillance
+ * possible toute la journée). Cliquable : renvoie directement vers la
+ * sélection des créneaux (onglet Réglages, voir DashboardScreen).
+ */
+@Composable
+fun ActiveHoursInfoCard(selectedSlots: Set<ActiveHoursSlot>, onClick: () -> Unit = {}) {
+    PremiumDashboardCard(modifier = Modifier.clickable { onClick() }) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(text = "🕐", fontSize = 24.sp)
+            Spacer(modifier = Modifier.width(16.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Créneaux actifs",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color.Gray
+                )
+                Text(
+                    text = if (selectedSlots.isEmpty()) {
+                        "Aucune restriction (toute la journée)"
+                    } else {
+                        selectedSlots.sortedBy { it.startHour }.joinToString(" • ") { it.label }
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+            }
+            Text(text = "›", fontSize = 22.sp, color = Color.Gray)
+        }
     }
 }
 

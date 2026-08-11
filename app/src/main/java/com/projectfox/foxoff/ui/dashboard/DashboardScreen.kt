@@ -5,6 +5,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Favorite
+import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Tv
@@ -26,6 +27,30 @@ fun DashboardScreen() {
     val uiState by viewModel.uiState.collectAsState()
     var selectedTab by remember { mutableIntStateOf(0) }
     val context = LocalContext.current
+
+    // Reconnexion automatique de la montre à l'ouverture du Dashboard (ex:
+    // relance de l'app), une seule fois par session — pas à chaque
+    // changement d'onglet. FoxCore.discoverWatch() a son propre verrou
+    // anti-concurrence.
+    LaunchedEffect(Unit) {
+        viewModel.ensureWatchConnected(context)
+    }
+
+    // Proposition ponctuelle de la surveillance en arrière-plan pour les
+    // utilisateurs ayant déjà terminé l'onboarding avant cette fonction
+    // (voir BackgroundServiceSettings.hasSeenPrompt). Les nouveaux
+    // utilisateurs y répondent déjà dans l'écran Permissions de
+    // l'onboarding, qui marque aussi ce flag — jamais affichée deux fois.
+    var showBackgroundMonitoringPrompt by remember {
+        mutableStateOf(!com.projectfox.foxoff.core.application.BackgroundServiceSettings.hasSeenPrompt(context))
+    }
+
+    // Créneau(x) sélectionné(s) pour la surveillance (voir ActiveHoursSettings) —
+    // miroir réactif, reflète immédiatement un changement fait depuis Réglages.
+    val selectedActiveHoursSlots by com.projectfox.foxoff.core.application.ActiveHoursSettings.selectedSlotsState.collectAsState()
+    LaunchedEffect(Unit) {
+        com.projectfox.foxoff.core.application.ActiveHoursSettings.getSelectedSlots(context)
+    }
 
     FoxGradientBackground {
         Scaffold(
@@ -99,6 +124,19 @@ fun DashboardScreen() {
                             unselectedTextColor = Color.Gray
                         )
                     )
+                    NavigationBarItem(
+                        selected = selectedTab == 4,
+                        onClick = { selectedTab = 4 },
+                        icon = { Icon(Icons.Rounded.History, contentDescription = null) },
+                        label = { Text("Historique") },
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = Color.White,
+                            selectedTextColor = Color.White,
+                            indicatorColor = Color.White.copy(alpha = 0.1f),
+                            unselectedIconColor = Color.Gray,
+                            unselectedTextColor = Color.Gray
+                        )
+                    )
                 }
             }
         ) { padding ->
@@ -115,32 +153,32 @@ fun DashboardScreen() {
                         status = uiState.mainStatus,
                         color = uiState.mainStatusColor
                     )
-                    
+
+                    ActiveHoursInfoCard(
+                        selectedSlots = selectedActiveHoursSlots,
+                        onClick = { selectedTab = 3 }
+                    )
+
                     FoxAnalysisCard(
                         state = uiState.sleepState,
                         confidence = uiState.confidence,
                         explanation = uiState.analysisExplanation
                     )
 
-                    PremiumHeartRateCard(
-                        bpm = uiState.currentBpm,
-                        min = uiState.minBpmToday,
-                        max = uiState.maxBpmToday,
-                        time = uiState.lastBpmTime
-                    )
-                    
                     DeviceCard(
                         icon = "⌚",
                         name = uiState.watchName,
                         isConnected = uiState.watchConnected,
+                        isKnown = uiState.watchKnown,
                         battery = uiState.watchBattery,
                         type = uiState.watchConnectionType,
+                        statusOverride = uiState.watchStatusOverride,
                         onAssociateClick = { viewModel.onAssociateClick(context) }
                     )
                     
                     TvDashboardCard(
                         name = uiState.tvName,
-                        isConnected = uiState.tvConnected,
+                        status = uiState.tvStatus,
                         currentApp = uiState.tvCurrentApp,
                         lastCommand = uiState.tvLastCommand,
                         lastCommandTime = uiState.tvLastCommandTime
@@ -148,8 +186,22 @@ fun DashboardScreen() {
 
                     Spacer(modifier = Modifier.height(32.dp))
                 }
+            } else if (selectedTab == 1) {
+                Box(modifier = Modifier.fillMaxSize().padding(padding)) {
+                    HealthScreen(uiState = uiState)
+                }
             } else if (selectedTab == 2) {
-                RemoteScreen()
+                Box(modifier = Modifier.fillMaxSize().padding(padding)) {
+                    RemoteScreen()
+                }
+            } else if (selectedTab == 3) {
+                Box(modifier = Modifier.fillMaxSize().padding(padding)) {
+                    com.projectfox.foxoff.ui.settings.SettingsScreen()
+                }
+            } else if (selectedTab == 4) {
+                Box(modifier = Modifier.fillMaxSize().padding(padding)) {
+                    HistoryScreen()
+                }
             } else {
                 Box(
                     modifier = Modifier.fillMaxSize().padding(padding),
@@ -159,5 +211,11 @@ fun DashboardScreen() {
                 }
             }
         }
+    }
+
+    if (showBackgroundMonitoringPrompt) {
+        com.projectfox.foxoff.ui.settings.BackgroundMonitoringPromptDialog(
+            onDismiss = { showBackgroundMonitoringPrompt = false }
+        )
     }
 }
