@@ -145,7 +145,7 @@ class TvConnectionManager(
             while (controlSocket?.isConnected == true) {
                 val msg = readMessage()
                 if (msg.isEmpty()) break
-                
+
                 // If tag is 0x1a (remote_ping), send 0x22 0x02 0x08 0x01 (remote_pong)
                 if (msg[0].toInt() == 0x1a) {
                     FoxLogger.i("FOX-TV | Control | Ping received, sending Pong")

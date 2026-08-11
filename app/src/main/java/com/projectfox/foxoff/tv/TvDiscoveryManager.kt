@@ -32,6 +32,7 @@ class TvDiscoveryManager(
 
     private val activeListeners = mutableMapOf<String, NsdManager.DiscoveryListener>()
     private val discoveredDevices = mutableMapOf<String, TvDevice>()
+    private var autoStopJob: Job? = null
     private fun getServicePriority(service: String): Int {
         return when (service) {
             "_androidtvremote2._tcp." -> 1
@@ -48,8 +49,19 @@ class TvDiscoveryManager(
     }
 
     fun startDiscovery() {
+        /*
+         * Idempotent : repart toujours d'un état propre. Sans ce
+         * stopDiscovery() préalable, un second appel (ex: "Relancer le
+         * scan") empilait un nouveau minuteur d'arrêt automatique sans
+         * annuler l'ancien -> l'ancien minuteur finissait par appeler
+         * stopDiscovery() en plein milieu du nouveau scan, qui semblait
+         * alors bloqué à "Appareils trouvés (0)".
+         */
+        stopDiscovery()
+        discoveredDevices.clear()
+
         FoxLogger.i("FOX-TV | SCAN START")
-        
+
         // 1. mDNS Discovery
         FoxLogger.i("FOX-TV | mDNS lancé")
         serviceTypes.forEach { type ->
@@ -77,7 +89,7 @@ class TvDiscoveryManager(
         }
         
         // Timer to stop
-        scope.launch {
+        autoStopJob = scope.launch {
             delay(60000)
             stopDiscovery()
             FoxLogger.i("FOX-TV | Scan terminé")
@@ -176,8 +188,19 @@ class TvDiscoveryManager(
 
         override fun onServiceLost(service: NsdServiceInfo) {}
         override fun onDiscoveryStopped(serviceType: String) {}
-        override fun onStartDiscoveryFailed(serviceType: String, errorCode: Int) {}
-        override fun onStopDiscoveryFailed(serviceType: String, errorCode: Int) {}
+
+        override fun onStartDiscoveryFailed(serviceType: String, errorCode: Int) {
+            // Auparavant silencieux : un échec ici (ex: appel en double côté
+            // OS) laissait activeListeners croire que ce type était actif,
+            // et un stopDiscovery() ultérieur tentait d'arrêter une
+            // recherche qui n'avait en réalité jamais démarré.
+            FoxLogger.e("FOX-TV | Discovery | onStartDiscoveryFailed pour $serviceType (code=$errorCode)")
+            activeListeners.remove(serviceType)
+        }
+
+        override fun onStopDiscoveryFailed(serviceType: String, errorCode: Int) {
+            FoxLogger.e("FOX-TV | Discovery | onStopDiscoveryFailed pour $serviceType (code=$errorCode)")
+        }
     }
 
     private suspend fun scanPorts(address: String): List<Int> = withContext(Dispatchers.IO) {

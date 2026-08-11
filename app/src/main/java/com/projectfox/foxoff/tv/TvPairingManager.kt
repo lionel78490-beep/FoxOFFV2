@@ -32,7 +32,7 @@ import javax.net.ssl.SSLSocket
  */
 class TvPairingManager(
     context: Context,
-    private val onStatusChanged: (TvConnectionStatus) -> Unit
+    private val onStatusChanged: (deviceId: String, status: TvConnectionStatus) -> Unit
 ) {
 
     companion object {
@@ -56,7 +56,7 @@ class TvPairingManager(
             close()
 
             currentDevice = device
-            onStatusChanged(TvConnectionStatus.PAIRING_REQUIRED)
+            onStatusChanged(device.id, TvConnectionStatus.PAIRING_REQUIRED)
 
             FoxLogger.i(
                 "FOX-TV | Pairing | Connexion à ${device.address}:$PAIRING_PORT"
@@ -155,7 +155,7 @@ class TvPairingManager(
                 "FOX-TV | Pairing | PIN affiché sur la TV"
             )
 
-            onStatusChanged(TvConnectionStatus.PAIRING_SENT)
+            onStatusChanged(device.id, TvConnectionStatus.PAIRING_SENT)
 
         } catch (e: Exception) {
             FoxLogger.e(
@@ -163,8 +163,11 @@ class TvPairingManager(
                 e
             )
 
+            // device (paramètre) reste valide même après close(), qui vide
+            // currentDevice -- utiliser device.id garantit qu'on notifie
+            // toujours le bon appareil.
             close()
-            onStatusChanged(TvConnectionStatus.ERROR)
+            onStatusChanged(device.id, TvConnectionStatus.ERROR)
         }
     }
 
@@ -280,9 +283,16 @@ class TvPairingManager(
             )
 
             currentDevice?.let { device ->
-                FoxTvSettings.saveTvIp(
+                // L'utilisateur vient de confirmer physiquement cette TV en
+                // saisissant le code affiché sur son écran : l'empreinte du
+                // certificat serveur observée ICI peut donc être enregistrée
+                // directement, sans confirmation supplémentaire (contrairement
+                // à une simple reconnexion, voir TvConnectionOutcomeResolver).
+                val fingerprint = TvCertificateFingerprint.of(serverCertificate)
+
+                FoxTvSettings.savePairedDevice(
                     appContext,
-                    device.address
+                    device.copy(certificateFingerprint = fingerprint)
                 )
             }
 
