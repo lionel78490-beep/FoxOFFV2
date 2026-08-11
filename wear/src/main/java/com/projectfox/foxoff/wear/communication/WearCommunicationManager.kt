@@ -134,23 +134,74 @@ class WearCommunicationManager(private val context: Context) {
     }
 
     /**
-     * Sends watch information (name and battery) to the phone.
+     * Envoie une magnitude de mouvement agrégée (voir MovementEngine) au
+     * téléphone. Pas de buffer contrairement au BPM : une magnitude
+     * périodique manquée ponctuellement n'a pas besoin d'être rattrapée
+     * (contrairement à un échantillon BPM), la suivante arrive 30s après.
      */
-    suspend fun sendWatchInfo(name: String, battery: Int) {
+    suspend fun sendMovement(magnitude: Float) {
         val nodes = getNodes()
-        if (nodes.isNotEmpty()) {
-            val payload = "$name|$battery".toByteArray()
-            val nodeIds = nodes.map { it.id }
-            nodeIds.forEach { nodeId ->
-                try {
-                    withContext(Dispatchers.IO) {
-                        Tasks.await(messageClient.sendMessage(nodeId, "/foxoff/watch_info", payload))
-                    }
-                    FoxWearLogger.i("FOX-WEAR | Infos montre envoyées à $nodeId")
-                } catch (e: Exception) {
-                    FoxWearLogger.e("FOX-WEAR | Erreur envoi infos montre", e)
+        if (nodes.isEmpty()) return
+
+        val payload = ByteBuffer.allocate(4).putFloat(magnitude).array()
+        nodes.map { it.id }.forEach { nodeId ->
+            try {
+                withContext(Dispatchers.IO) {
+                    Tasks.await(messageClient.sendMessage(nodeId, "/foxoff/movement", payload))
                 }
+                FoxWearLogger.d("FOX-WEAR | Mouvement $magnitude envoyé à $nodeId")
+            } catch (e: Exception) {
+                FoxWearLogger.e("FOX-WEAR | Échec envoi mouvement", e)
             }
         }
+    }
+
+    /**
+     * Sends watch information (name and battery) to the phone. Retourne
+     * true si au moins un nœud téléphone était joignable (donc un envoi a
+     * été tenté) — permet à FoxWearCore de savoir s'il doit réessayer au
+     * démarrage plutôt que d'attendre le prochain envoi périodique.
+     */
+    suspend fun sendWatchInfo(name: String, battery: Int): Boolean {
+        val nodes = getNodes()
+        if (nodes.isEmpty()) return false
+
+        val payload = "$name|$battery".toByteArray()
+        val nodeIds = nodes.map { it.id }
+        nodeIds.forEach { nodeId ->
+            try {
+                withContext(Dispatchers.IO) {
+                    Tasks.await(messageClient.sendMessage(nodeId, "/foxoff/watch_info", payload))
+                }
+                FoxWearLogger.i("FOX-WEAR | Infos montre envoyées à $nodeId")
+            } catch (e: Exception) {
+                FoxWearLogger.e("FOX-WEAR | Erreur envoi infos montre", e)
+            }
+        }
+        return true
+    }
+
+    /**
+     * Répond à une demande de confirmation "toujours là" (voir
+     * ConfirmAwakeNotifier côté montre / SleepPauseCoordinator côté
+     * téléphone). Même pattern que sendMovement()/sendWatchInfo() : pas de
+     * buffer, une réponse manquée ponctuellement n'a pas de sens à
+     * rattraper plus tard.
+     */
+    suspend fun sendConfirmResponse(): Boolean {
+        val nodes = getNodes()
+        if (nodes.isEmpty()) return false
+
+        nodes.map { it.id }.forEach { nodeId ->
+            try {
+                withContext(Dispatchers.IO) {
+                    Tasks.await(messageClient.sendMessage(nodeId, "/foxoff/confirm_response", byteArrayOf()))
+                }
+                FoxWearLogger.i("FOX-WEAR | Confirmation 'toujours là' envoyée à $nodeId")
+            } catch (e: Exception) {
+                FoxWearLogger.e("FOX-WEAR | Échec envoi confirmation", e)
+            }
+        }
+        return true
     }
 }

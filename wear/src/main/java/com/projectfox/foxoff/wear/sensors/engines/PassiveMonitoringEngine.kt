@@ -21,9 +21,15 @@ import kotlinx.coroutines.flow.asSharedFlow
 class PassiveMonitoringEngine(private val context: Context) : WearSensorEngine {
 
     private val passiveClient = HealthServices.getClient(context).passiveMonitoringClient
-    
+
     private val _samples = MutableSharedFlow<WearHeartRateSample>(replay = 1, extraBufferCapacity = 64)
     override val samples: Flow<WearHeartRateSample> = _samples.asSharedFlow()
+
+    // Toutes les erreurs internes étaient auparavant seulement journalisées
+    // (Logcat) — exposées ici pour que FoxWearCore puisse les afficher dans
+    // l'UI (diagnostic temporaire, voir WearHomeScreen) sans dépendre d'ADB.
+    var lastError: String? = null
+        private set
 
     override suspend fun initialize() {
         FoxWearLogger.i("FOX-WEAR | PassiveEngine | Initialisé")
@@ -32,8 +38,12 @@ class PassiveMonitoringEngine(private val context: Context) : WearSensorEngine {
     suspend fun isSupported(): Boolean {
         return try {
             val capabilities = passiveClient.getCapabilitiesAsync().await()
-            DataType.HEART_RATE_BPM in capabilities.supportedDataTypesPassiveMonitoring
+            val supported = DataType.HEART_RATE_BPM in capabilities.supportedDataTypesPassiveMonitoring
+            if (!supported) lastError = "HEART_RATE_BPM absent de supportedDataTypesPassiveMonitoring"
+            supported
         } catch (e: Exception) {
+            lastError = "isSupported(): ${e.javaClass.simpleName} ${e.message}"
+            FoxWearLogger.e("FOX-WEAR | PassiveEngine | Erreur vérification support", e)
             false
         }
     }
@@ -43,14 +53,16 @@ class PassiveMonitoringEngine(private val context: Context) : WearSensorEngine {
             val config = PassiveListenerConfig.builder()
                 .setDataTypes(setOf(DataType.HEART_RATE_BPM))
                 .build()
-            
+
             passiveClient.setPassiveListenerServiceAsync(
                 PassiveDataService::class.java,
                 config
             ).await()
-            
+
+            lastError = null
             FoxWearLogger.i("FOX-WEAR | PassiveEngine | Surveillance d'arrière-plan activée")
         } catch (e: Exception) {
+            lastError = "start(): ${e.javaClass.simpleName} ${e.message}"
             FoxWearLogger.e("FOX-WEAR | PassiveEngine | Erreur activation", e)
         }
     }
