@@ -1,6 +1,6 @@
 # Politique de confidentialité — FoxOFF
 
-**Dernière mise à jour : 10 août 2026**
+**Dernière mise à jour : 12 août 2026**
 
 FoxOFF est une application personnelle qui détecte l'endormissement de
 l'utilisateur (fréquence cardiaque et mouvement, mesurés par une montre
@@ -46,6 +46,15 @@ détectés, connexions TV/montre) est conservé localement sur votre
 téléphone, pour vous permettre de consulter le fonctionnement de l'app.
 Ce journal reste sur l'appareil ; vous pouvez l'effacer à tout moment
 depuis l'onglet Historique de l'application.
+
+### Chiffrement des données stockées
+Toutes les données conservées localement (fréquence cardiaque, sommeil,
+historique, identifiants montre/TV) sont chiffrées au repos sur votre
+téléphone à l'aide d'une clé gérée par l'Android Keystore matériel de votre
+appareil — jamais exportable, jamais lisible en clair, même en cas d'accès
+physique au stockage de l'appareil. FoxOFF ne sauvegarde par ailleurs
+aucune de ces données via le service de sauvegarde automatique d'Android :
+rien ne quitte votre téléphone, y compris vers votre propre compte Google.
 
 ## Permissions demandées et pourquoi
 
