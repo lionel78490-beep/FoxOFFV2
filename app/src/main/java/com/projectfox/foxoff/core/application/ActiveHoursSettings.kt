@@ -42,8 +42,7 @@ object ActiveHoursSettings {
     val selectedSlotsState: StateFlow<Set<ActiveHoursSlot>> = _selectedSlotsState.asStateFlow()
 
     fun getSelectedSlots(context: Context): Set<ActiveHoursSlot> {
-        val stored = context.applicationContext
-            .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val stored = com.projectfox.foxoff.core.security.FoxEncryptedPrefs.get(context, PREFS_NAME)
             .getStringSet(KEY_SELECTED_SLOTS, emptySet()) ?: emptySet()
         val slots = stored.mapNotNull { name ->
             runCatching { ActiveHoursSlot.valueOf(name) }.getOrNull()
@@ -53,8 +52,7 @@ object ActiveHoursSettings {
     }
 
     fun setSelectedSlots(context: Context, slots: Set<ActiveHoursSlot>) {
-        context.applicationContext
-            .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        com.projectfox.foxoff.core.security.FoxEncryptedPrefs.get(context, PREFS_NAME)
             .edit()
             .putStringSet(KEY_SELECTED_SLOTS, slots.map { it.name }.toSet())
             .apply()
@@ -68,14 +66,12 @@ object ActiveHoursSettings {
      * chaque lancement tant qu'aucun choix explicite n'a été fait.
      */
     fun hasSeenPrompt(context: Context): Boolean {
-        return context.applicationContext
-            .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        return com.projectfox.foxoff.core.security.FoxEncryptedPrefs.get(context, PREFS_NAME)
             .getBoolean("active_hours_prompt_seen", false)
     }
 
     fun markPromptSeen(context: Context) {
-        context.applicationContext
-            .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        com.projectfox.foxoff.core.security.FoxEncryptedPrefs.get(context, PREFS_NAME)
             .edit()
             .putBoolean("active_hours_prompt_seen", true)
             .apply()

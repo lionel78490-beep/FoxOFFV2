@@ -72,8 +72,7 @@ object NightLog {
     }
 
     private fun loadFromPrefs(context: Context): List<NightLogEntry> {
-        val raw = context.applicationContext
-            .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val raw = com.projectfox.foxoff.core.security.FoxEncryptedPrefs.get(context, PREFS_NAME)
             .getString(KEY_ENTRIES, null) ?: return emptyList()
         return try {
             val array = JSONArray(raw)
@@ -101,8 +100,7 @@ object NightLog {
                     .put("detail", entry.detail)
             )
         }
-        context.applicationContext
-            .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        com.projectfox.foxoff.core.security.FoxEncryptedPrefs.get(context, PREFS_NAME)
             .edit()
             .putString(KEY_ENTRIES, array.toString())
             .apply()

@@ -2,6 +2,7 @@ package com.projectfox.foxoff.tv
 
 import android.content.Context
 import android.util.Log
+import com.projectfox.foxoff.core.security.FoxEncryptedPrefs
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.mockkStatic
@@ -31,12 +32,15 @@ class FoxTvSettingsTest {
         fakePrefs = FakeSharedPreferences()
         context = mockk(relaxed = true)
         every { context.applicationContext } returns context
-        every { context.getSharedPreferences(any(), any()) } returns fakePrefs
+        // Le chiffrement réel (FoxEncryptedPrefs) exige l'Android Keystore,
+        // absent des tests JVM — voir sa KDoc pour ce point d'injection.
+        FoxEncryptedPrefs.setTestFactory { _, _ -> fakePrefs }
     }
 
     @After
     fun tearDown() {
         unmockkStatic(Log::class)
+        FoxEncryptedPrefs.resetForTests()
     }
 
     private fun device(id: String, name: String, address: String, port: Int = 6467) =

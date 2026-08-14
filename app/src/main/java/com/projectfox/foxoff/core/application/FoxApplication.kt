@@ -24,7 +24,14 @@ import kotlinx.coroutines.launch
  */
 @HiltAndroidApp
 class FoxApplication : Application() {
-    private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    // IO, pas Main : FoxCore.initialize() (et tout ce qu'il déclenche —
+    // WatchSettings, RestingBpmSettings, NightLog, SleepDetectionHistory)
+    // lit des SharedPreferences chiffrées (voir FoxEncryptedPrefs), dont le
+    // tout premier accès génère la clé maître Android Keystore — une vraie
+    // opération cryptographique, pas instantanée. La faire sur Main
+    // bloquait le thread UI au démarrage (régression réelle constatée le
+    // 2026-08-12 : jusqu'à 3-4 min de blocage après réinstallation).
+    private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     override fun onCreate() {
         super.onCreate()
@@ -37,10 +44,36 @@ class FoxApplication : Application() {
         // héritée d'un processus précédent, qui n'existe plus de toute façon.
         FoxForegroundServiceState.update(FoxForegroundServiceStatus.STOPPED)
 
+        // Amorce le cache FoxEncryptedPrefs pour tous les fichiers connus,
+        // le plus tôt possible et en arrière-plan — la clé maître Android
+        // Keystore n'est générée qu'UNE SEULE fois (partagée entre tous les
+        // fichiers), donc ce warm-up réduit d'autant la latence du tout
+        // premier écran (Réglages, détection montre...) qui touchera l'un
+        // de ces fichiers de façon synchrone plus tard.
+        appScope.launch {
+            listOf(
+                "fox_active_hours_settings",
+                "fox_background_service_settings",
+                "fox_resting_bpm_settings",
+                "fox_watch_settings",
+                "fox_night_log",
+                "fox_sleep_detection_history",
+                "fox_tv_settings",
+                "foxoff_tv_identity_rsa_v1",
+                "foxoff_tv_pairs"
+            ).forEach { name ->
+                com.projectfox.foxoff.core.security.FoxEncryptedPrefs.get(this@FoxApplication, name)
+            }
+        }
+
         // Synchronise les miroirs réactifs dès le lancement, pour que tout
         // composable qui les observe (SettingsScreen) ait immédiatement la
         // bonne valeur, sans dépendre d'un premier appel incident ailleurs.
-        BackgroundServiceSettings.isEnabled(this)
+        // Sur IO, pas sur le thread appelant (onCreate() tourne sur Main) —
+        // même raison que le dispatcher d'appScope ci-dessus.
+        appScope.launch {
+            BackgroundServiceSettings.isEnabled(this@FoxApplication)
+        }
 
         // Seul déclencheur capable de démarrer/arrêter la surveillance au
         // bon moment d'après un créneau horaire (ActiveHoursSettings) sans

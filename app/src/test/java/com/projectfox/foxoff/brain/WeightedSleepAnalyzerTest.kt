@@ -137,6 +137,22 @@ class WeightedSleepAnalyzerTest {
         assertEquals(0.30f, score.sleepProbability, 0.0001f)
     }
 
+    @Test
+    fun `minBpmToday never widens the threshold above restingBpmBaseline`() {
+        // Faux positif réel du 2026-08-12 : minBpmToday figé à 71 dès la
+        // première lecture de la soirée (encore élevée, loin du sommeil
+        // réel), restingBpmBaseline calibré à 65. Sans plancher, le seuil
+        // serait 71 * 1.12 = 79,52 -> 79 bpm déclencherait le bonus. Avec le
+        // plancher (minOf), le seuil retombe à 65 * 1.12 = 72,8 -> 79 bpm ne
+        // doit PAS déclencher le bonus.
+        val state = stateWithScore(0.30f, minBpmToday = 71)
+            .copy(restingBpmBaseline = 65, bpmBelowBaselineSince = sustainedSince())
+
+        val score = analyzer.analyze(FoxBrainEvent.HeartRateReceived(bpm = 79f, source = "TEST"), state)
+
+        assertEquals(0.30f, score.sleepProbability, 0.0001f)
+    }
+
     // --- MovementDetected ---
 
     @Test

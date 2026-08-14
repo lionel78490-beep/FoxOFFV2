@@ -1,5 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
 
-    <style name="Theme.FoxOFFV2" parent="android:Theme.Material.Light.NoActionBar" />
+    <!-- android:windowBackground fixe la couleur de la fenêtre de démarrage
+         "à froid" (avant même le premier frame Compose) — héritée par
+         défaut de Theme.Material.Light (blanc), d'où le flash blanc
+         constaté par l'utilisateur (2026-08-14) avant l'apparition de
+         l'écran d'accueil. Alignée ici sur la couleur exacte du fond
+         nocturne de WelcomeScreen (bg_welcome_night.jpg) pour une
+         transition invisible. Sert aussi de fallback pour le splash
+         screen système d'Android 12+ (voir values-v31/themes.xml). -->
+    <style name="Theme.FoxOFFV2" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">#000519</item>
+    </style>
 </resources>

@@ -33,6 +33,8 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import java.time.Duration
+import java.time.Instant
 
 /**
  * Service de premier plan (tâche #13) : démarrage, promotion en premier
@@ -61,14 +63,13 @@ class FoxForegroundService : Service() {
         private var instance: FoxForegroundService? = null
 
         /**
-         * Relance le heartbeat de reconnexion s'il s'était arrêté (voir
-         * startHeartbeat() — arrêt volontaire une fois la TV en pause, pour
-         * économiser la batterie le reste de la nuit). Appelé quand
+         * Déclenche une vérification montre/TV immédiate et relance le
+         * heartbeat et/ou le visibility watchdog s'ils s'étaient arrêtés
+         * (voir startHeartbeat()/startVisibilityWatchdog()). Appelé quand
          * l'utilisateur rouvre l'application (ProcessLifecycleOwner.onStart,
-         * voir FoxApplication) : à ce moment-là il est réveillé, donc la
-         * reconnexion montre/TV redevient utile — sans attendre que
-         * l'utilisateur tue puis relance le processus. Sans effet si le
-         * service ne tourne pas du tout, ou si le heartbeat tourne déjà.
+         * voir FoxApplication) : à ce moment-là il est réveillé, pas la
+         * peine d'attendre le prochain intervalle. Sans effet si le service
+         * ne tourne pas du tout.
          */
         fun restartHeartbeatIfStopped() {
             instance?.restartHeartbeatIfStopped()
@@ -78,6 +79,32 @@ class FoxForegroundService : Service() {
         // n'utilise pas WorkManager, cette valeur ne lui est pas liée).
         // Constante isolée pour rester facile à ajuster.
         private const val HEARTBEAT_INTERVAL_MS = 15 * 60 * 1000L
+
+        // Une fois la TV en pause (sommeil confirmé), le heartbeat RALENTIT
+        // au lieu de s'arrêter complètement (comportement précédent,
+        // 2026-08-11) — régression réelle constatée le 2026-08-13 : plus
+        // aucune revérification du statut TV ne se produisait, donc FoxOFF
+        // ne pouvait jamais détecter que la TV avait repris (utilisateur
+        // ayant remis Play manuellement) tant que l'app n'était pas
+        // rouverte. Choisi explicitement avec l'utilisateur : ralentir
+        // plutôt que couper, pour rester capable de détecter une reprise
+        // dans un délai raisonnable, moyennant un impact batterie faible.
+        private const val POST_PAUSE_HEARTBEAT_INTERVAL_MS = 30 * 60 * 1000L
+
+        // Plafond demandé explicitement par l'utilisateur (2026-08-13) :
+        // FoxOFF ne peut PAS interroger l'état réel de la TV (la
+        // télécommande Freebox envoie une simple touche Lecture/Pause à
+        // l'aveugle, voir TvCommandSender — aucune API d'état branchée),
+        // donc impossible de détecter une vraie reprise pour arrêter le
+        // heartbeat au bon moment. À la place : durée max après laquelle le
+        // heartbeat ralenti s'arrête complètement, même sans signal de
+        // reprise. Ramené de 2h à 30 min le jour même (choix explicite de
+        // l'utilisateur) : avec POST_PAUSE_HEARTBEAT_INTERVAL_MS = 30 min,
+        // ça revient à UNE seule reconnexion de rattrapage après la pause,
+        // puis arrêt complet — fenêtre de rattrapage courte plutôt qu'un
+        // délai généreux, quitte à ce qu'une reprise plus tardive dans la
+        // nuit ne soit détectée qu'à la réouverture de l'app.
+        private val POST_PAUSE_HEARTBEAT_MAX_DURATION: Duration = Duration.ofMinutes(30)
 
         // Vérification de visibilité (permission/canal) — nettement plus
         // rapide que le heartbeat ci-dessus (qui sert la reconnexion montre,
@@ -95,6 +122,17 @@ class FoxForegroundService : Service() {
 
     @Volatile
     private var heartbeatStopped = false
+
+    @Volatile
+    private var visibilityWatchdogStopped = false
+
+    // Instant où tvIsPaused est passé à true pour la première fois observée
+    // par la boucle (voir startHeartbeat()) — sert uniquement à calculer
+    // POST_PAUSE_HEARTBEAT_MAX_DURATION, remis à null si tvIsPaused
+    // redevient faux (n'arrive normalement qu'à la réouverture de l'app,
+    // voir FoxBrain.kt, mais gardé par cohérence).
+    @Volatile
+    private var pausedSince: Instant? = null
 
     // Certains appareils/versions Android permettent de balayer une
     // notification "ongoing" (setOngoing(true) n'empêche pas toujours le
@@ -282,32 +320,46 @@ class FoxForegroundService : Service() {
      * ne fait qu'un test de connexion en lecture seule (voir
      * TvRemoteClient.testConnection()), jamais de commande.
      *
-     * S'arrête (jusqu'à ce que l'utilisateur rouvre l'app, voir
-     * restartHeartbeatIfStopped() ci-dessus) dès que `tvIsPaused` est vrai
-     * — le sommeil a été confirmé et la TV déjà mise en pause, donc plus
-     * aucune reconnexion montre/TV n'a d'utilité tant qu'il dort : économie
-     * de batterie demandée explicitement par l'utilisateur. `tvIsPaused` ne
-     * repasse jamais à `false` de lui-même (voir FoxBrain.kt) — seule la
-     * réouverture de l'app relance la boucle.
+     * Ralentit (voir POST_PAUSE_HEARTBEAT_INTERVAL_MS) une fois
+     * `tvIsPaused` vrai — le sommeil a été confirmé et la TV déjà mise en
+     * pause, donc l'intervalle passe de 15 à 30 min pour économiser la
+     * batterie, mais la boucle continue de tourner un moment plutôt que de
+     * s'arrêter net : régression réelle constatée le 2026-08-13 quand elle
+     * s'arrêtait immédiatement (voir POST_PAUSE_HEARTBEAT_INTERVAL_MS) —
+     * sans reconnexion périodique, FoxOFF ne pouvait jamais détecter qu'une
+     * TV remise en Play manuellement par l'utilisateur avait repris, tant
+     * que l'app n'était pas rouverte. `tvIsPaused` ne repasse jamais à
+     * `false` de lui-même (voir FoxBrain.kt) et FoxOFF n'a AUCUN moyen
+     * d'interroger l'état réel de la TV (télécommande Freebox = simple
+     * touche Lecture/Pause envoyée à l'aveugle, voir TvCommandSender) —
+     * donc au-delà de POST_PAUSE_HEARTBEAT_MAX_DURATION, la boucle s'arrête
+     * quand même, décision explicite de l'utilisateur plutôt que de tourner
+     * à ce rythme toute la nuit sans aucun signal de reprise.
      */
     private fun startHeartbeat() {
         scope.launch {
             while (isActive) {
-                delay(HEARTBEAT_INTERVAL_MS)
-                FoxLogger.i(
-                    "FOX-BG | Heartbeat | Reconnexion de secours " +
-                            "(toutes les ${HEARTBEAT_INTERVAL_MS / 60_000} min, montre + statut TV, aucune commande)"
-                )
-                FoxCore.discoverWatch(applicationContext)
-                FoxCore.tvEngine?.refreshActiveDevice()
+                val isPaused = FoxCore.brain.state.value.tvIsPaused
+                pausedSince = if (isPaused) (pausedSince ?: Instant.now()) else null
 
-                if (FoxCore.brain.state.value.tvIsPaused) {
+                val elapsedSincePause = pausedSince?.let { Duration.between(it, Instant.now()) }
+                if (elapsedSincePause != null && elapsedSincePause >= POST_PAUSE_HEARTBEAT_MAX_DURATION) {
                     FoxLogger.i(
-                        "FOX-BG | Heartbeat | TV déjà en pause (sommeil confirmé) -> arrêt de la boucle jusqu'à réouverture de l'app"
+                        "FOX-BG | Heartbeat | Plus de ${POST_PAUSE_HEARTBEAT_MAX_DURATION.toMinutes()} min " +
+                                "depuis la pause sans signal de reprise -> arrêt de la boucle jusqu'à réouverture de l'app"
                     )
                     heartbeatStopped = true
                     break
                 }
+
+                val intervalMs = if (isPaused) POST_PAUSE_HEARTBEAT_INTERVAL_MS else HEARTBEAT_INTERVAL_MS
+                delay(intervalMs)
+                FoxLogger.i(
+                    "FOX-BG | Heartbeat | Reconnexion de secours " +
+                            "(toutes les ${intervalMs / 60_000} min, montre + statut TV, aucune commande)"
+                )
+                FoxCore.discoverWatch(applicationContext)
+                FoxCore.tvEngine?.refreshActiveDevice()
             }
         }
     }
@@ -315,18 +367,29 @@ class FoxForegroundService : Service() {
     /**
      * Relance immédiatement une vérification (comme
      * performInitialPresenceCheck() au tout premier démarrage) puis reprend
-     * la boucle périodique — pas la peine d'attendre jusqu'à 15 min de plus
-     * puisque l'utilisateur vient justement de rouvrir l'app.
+     * la boucle périodique si elle s'était arrêtée (plafond de durée
+     * atteint, voir POST_PAUSE_HEARTBEAT_MAX_DURATION) — pas la peine
+     * d'attendre puisque l'utilisateur vient justement de rouvrir l'app.
+     * Relance aussi le visibility watchdog (voir startVisibilityWatchdog())
+     * s'il s'était arrêté — flags indépendants par précaution, mais les
+     * deux boucles ont vocation à repartir ensemble.
      */
     private fun restartHeartbeatIfStopped() {
-        if (!heartbeatStopped) return
-        heartbeatStopped = false
-        scope.launch {
-            FoxCore.discoverWatch(applicationContext)
-            FoxCore.tvEngine?.refreshActiveDevice()
+        if (heartbeatStopped) {
+            heartbeatStopped = false
+            pausedSince = null
+            scope.launch {
+                FoxCore.discoverWatch(applicationContext)
+                FoxCore.tvEngine?.refreshActiveDevice()
+            }
+            startHeartbeat()
         }
-        startHeartbeat()
+        if (visibilityWatchdogStopped) {
+            visibilityWatchdogStopped = false
+            startVisibilityWatchdog()
+        }
     }
+
 
     /**
      * Vérifie la visibilité de la notification (permission POST_NOTIFICATIONS,
@@ -339,6 +402,17 @@ class FoxForegroundService : Service() {
      * notificationDismissedReceiver (balayage explicite, instantané) : ce
      * watchdog couvre les cas où la notification est coupée sans balayage
      * direct (ex: désactivation depuis les réglages système).
+     *
+     * S'arrête (jusqu'à réouverture de l'app, voir restartHeartbeatIfStopped())
+     * dès que `tvIsPaused` est vrai, même logique et même demande explicite
+     * que startHeartbeat() : ~480 réveils/nuit à 60s d'intervalle contre ~32
+     * pour le heartbeat (15 min) — un vrai poste de consommation identifié
+     * après une nuit où la batterie a chuté plus vite qu'attendu malgré les
+     * autres optimisations déjà en place. Compromis assumé : si la
+     * notification est révoquée après la pause, la surveillance BPM
+     * continue silencieusement jusqu'au matin plutôt que de s'arrêter en
+     * moins d'une minute — acceptable une fois l'objectif principal de la
+     * nuit (pause TV) déjà atteint.
      */
     private fun startVisibilityWatchdog() {
         scope.launch {
@@ -348,6 +422,14 @@ class FoxForegroundService : Service() {
                     FoxLogger.e("FOX-BG | Visibilité perdue (permission/canal) -> arrêt de la surveillance")
                     failAndStop("Notification désactivée dans les réglages système : la surveillance a été désactivée.")
                     return@launch
+                }
+
+                if (FoxCore.brain.state.value.tvIsPaused) {
+                    FoxLogger.i(
+                        "FOX-BG | Visibility watchdog | TV déjà en pause (sommeil confirmé) -> arrêt de la boucle jusqu'à réouverture de l'app"
+                    )
+                    visibilityWatchdogStopped = true
+                    break
                 }
             }
         }

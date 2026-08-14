@@ -24,7 +24,7 @@ fun EnvironmentSetupScreen(onNext: () -> Unit) {
         }
     }
 
-    FoxGradientBackground {
+    FoxOnboardingBackground {
         Column(
             modifier = Modifier
                 .fillMaxSize()

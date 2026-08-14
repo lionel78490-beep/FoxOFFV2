@@ -8,6 +8,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -25,50 +26,57 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.projectfox.foxoff.ui.onboarding.components.*
-import kotlinx.coroutines.delay
-
-@Composable
-fun SplashScreen(onAnimationFinished: () -> Unit) {
-    var isVisible by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) {
-        delay(500)
-        isVisible = true
-        delay(2500)
-        isVisible = false
-        delay(800)
-        onAnimationFinished()
-    }
-    FoxGradientBackground {
-        AnimatedVisibility(
-            visible = isVisible,
-            modifier = Modifier.align(Alignment.Center),
-            enter = fadeIn(tween(1000)) + scaleIn(initialScale = 0.8f),
-            exit = fadeOut(tween(800)) + scaleOut(targetScale = 1.2f)
-        ) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                FoxAnimatedLogo()
-                Spacer(modifier = Modifier.height(32.dp))
-                FoxTitle(text = "FOXOFF")
-                Spacer(modifier = Modifier.height(16.dp))
-                FoxSubtitle(text = "Votre sommeil.\nVotre télévision.\nEn parfaite synchronisation.")
-            }
-        }
-    }
-}
 
 @Composable
 fun WelcomeScreen(onNext: () -> Unit) {
-    FoxGradientBackground {
-        Column(modifier = Modifier.fillMaxSize().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+    // Tout premier écran affiché au lancement de l'app (2026-08-14 :
+    // l'écran "splash" animé qui s'affichait avant a été retiré du flux
+    // de navigation — plus de délai/pause noire avant d'arriver ici).
+    // FoxOnboardingBackground (image ciel étoilé + forêt, initialement
+    // ajoutée ici) est désormais partagée par tout le flux d'onboarding.
+    FoxOnboardingBackground {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(start = 24.dp, end = 24.dp, top = 8.dp, bottom = 24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
             FoxProgressConnection(step = 1)
-            Spacer(modifier = Modifier.weight(0.5f))
-            FoxAnimatedLogo()
-            Spacer(modifier = Modifier.height(48.dp))
-            FoxTitle(text = "Bienvenue sur FoxOFF")
-            Spacer(modifier = Modifier.height(24.dp))
-            FoxSubtitle(text = "FoxOFF détecte automatiquement votre endormissement grâce à votre montre connectée et met votre télévision en pause au bon moment.")
+            // Illustration "renard endormi sur la lune" fournie par
+            // l'utilisateur (2026-08-14, remplace le badge circulaire) —
+            // fox_on_moon_blended.png est dérivé de cette image (recadrée
+            // sous la lune pour retirer le ciel vide en bas, qui gonflait
+            // inutilement la hauteur de la boîte et empêchait "FoxOFF" de
+            // remonter juste en dessous) avec un dégradé alpha elliptique
+            // (opaque au centre, transparent vers les bords) généré par
+            // script, pour qu'elle se fonde dans bg_welcome_night.jpg
+            // plutôt que d'apparaître comme un rectangle collé par-dessus.
+            // Recadré une 2e fois (2026-08-14, "encore" plus haut) : haut
+            // ET bas rognés au plus près de la lune (511:700 désormais),
+            // pour que la boîte n'ait plus de marge étoilée inutile ni en
+            // haut ni en bas.
+            androidx.compose.foundation.Image(
+                painter = androidx.compose.ui.res.painterResource(id = com.projectfox.foxoff.R.drawable.fox_on_moon_blended),
+                contentDescription = "Fox endormi sur la lune",
+                contentScale = androidx.compose.ui.layout.ContentScale.Fit,
+                modifier = Modifier
+                    .width(270.dp)
+                    .height(370.dp)
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            FoxWordmark(fontSize = 60.sp)
+            Spacer(modifier = Modifier.height(16.dp))
+            // Reformulé le 2026-08-14 : le sommeil en sujet principal, la
+            // pause TV citée comme une des actions plutôt que LE sujet du
+            // message (demande explicite : "le message ne doit pas être
+            // principalement la télévision").
+            FoxSubtitle(text = "FoxOFF veille sur votre sommeil grâce à votre montre connectée, et met en pause ce que vous regardez dès que vous vous endormez.")
             Spacer(modifier = Modifier.weight(1f))
-            FoxButton(text = "Commencer", onClick = onNext)
+            FoxButton(
+                text = "Commencer",
+                onClick = onNext,
+                gradient = listOf(Color(0xFFFFA000), Color(0xFFFF6D00))
+            )
         }
     }
 }
@@ -198,7 +206,7 @@ fun PermissionScreen(onNext: () -> Unit) {
     // jamais demandée si Bluetooth/Wi-Fi étaient déjà accordés.
     val readyToContinue = corePermissionsGranted && backgroundChoice != null
 
-    FoxGradientBackground {
+    FoxOnboardingBackground {
         Column(modifier = Modifier.fillMaxSize().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             FoxProgressConnection(step = 2)
             Spacer(modifier = Modifier.height(24.dp))
@@ -322,7 +330,7 @@ fun ActiveHoursScreen(onNext: () -> Unit) {
         onNext()
     }
 
-    FoxGradientBackground {
+    FoxOnboardingBackground {
         Column(modifier = Modifier.fillMaxSize().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             FoxProgressConnection(step = 3)
             Spacer(modifier = Modifier.height(24.dp))
@@ -393,12 +401,186 @@ fun ActiveHoursSlotCard(
     }
 }
 
+/**
+ * Demande de l'accès spécial "Accès aux notifications", requis pour mettre
+ * en pause la lecture média du téléphone (vidéo/musique — YouTube,
+ * Spotify...) en plus de la TV, voir PhoneMediaPauseController. Non
+ * bloquant : "Continuer" reste toujours actif, l'utilisateur peut aussi
+ * l'activer plus tard depuis Réglages — best-effort comme le reste des
+ * fonctionnalités liées à la pause (rien ne casse si refusé).
+ */
+@Composable
+fun PhoneMediaPauseScreen(onNext: () -> Unit) {
+    val context = LocalContext.current
+    var hasAccess by remember {
+        mutableStateOf(com.projectfox.foxoff.core.media.PhoneMediaPauseController.hasNotificationAccess(context))
+    }
+
+    // L'octroi de cet accès se fait dans une app Réglages externe (pas de
+    // ActivityResultContract dédié pour ce type de permission spéciale) :
+    // on ne peut détecter le retour qu'au prochain ON_RESUME du cycle de
+    // vie, pas via un callback direct.
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                hasAccess = com.projectfox.foxoff.core.media.PhoneMediaPauseController.hasNotificationAccess(context)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    FoxOnboardingBackground {
+        Column(modifier = Modifier.fillMaxSize().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            FoxProgressConnection(step = 4)
+            Spacer(modifier = Modifier.height(24.dp))
+            FoxTitle(text = "Pause du téléphone")
+            Spacer(modifier = Modifier.height(16.dp))
+            FoxSubtitle(
+                text = "En plus de la TV, FoxOFF peut aussi mettre en pause la vidéo ou la " +
+                        "musique en cours sur ce téléphone (YouTube, Spotify...) au moment de " +
+                        "l'endormissement. Ceci nécessite l'accès spécial \"Accès aux " +
+                        "notifications\" d'Android."
+            )
+
+            Spacer(modifier = Modifier.height(32.dp))
+
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(24.dp))
+                    .background(Color.White.copy(alpha = 0.05f))
+                    .padding(20.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(text = if (hasAccess) "✅" else "🔔", fontSize = 28.sp)
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = if (hasAccess) "Accès accordé" else "Accès non accordé",
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "Optionnel — la pause TV fonctionne dans tous les cas.",
+                            color = Color.Gray,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            if (!hasAccess) {
+                OutlinedButton(
+                    onClick = {
+                        context.startActivity(
+                            android.content.Intent(android.provider.Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
+                        )
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Activer l'accès aux notifications")
+                }
+                Spacer(modifier = Modifier.height(16.dp))
+            }
+
+            Spacer(modifier = Modifier.weight(1f))
+            FoxButton(text = "Continuer", onClick = onNext)
+        }
+    }
+}
+
+/**
+ * Étape insérée le 2026-08-13, avant WatchDetectionScreen — bug réel
+ * signalé par un testeur Garmin : sans ce choix, WatchDetectionScreen
+ * cherchait toujours une Galaxy Watch (WatchBrand.WEAR_OS, valeur par
+ * défaut de WatchSettings.getWatchBrand() tant que rien n'a été
+ * enregistré), donc ne trouvait jamais une montre Garmin. Réutilise
+ * exactement le même mécanisme que "Changer de montre" dans Réglages
+ * (WatchBrand/WatchSettings), y compris le redémarrage complet de l'app
+ * si la marque change : FoxCore.initialize() ne lit
+ * WatchSettings.getWatchBrand() qu'une seule fois au démarrage du
+ * processus (voir FoxCore.kt), donc changer la préférence seule ne
+ * suffit pas à faire prendre effet un nouveau WatchTransport tant que
+ * le processus n'est pas relancé.
+ */
+@Composable
+fun WatchBrandScreen(onNext: () -> Unit) {
+    val context = LocalContext.current
+    var selectedBrand by remember {
+        mutableStateOf(com.projectfox.foxoff.core.application.WatchSettings.getWatchBrand(context))
+    }
+
+    FoxOnboardingBackground {
+        Column(modifier = Modifier.fillMaxSize().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            FoxProgressConnection(step = 5)
+            Spacer(modifier = Modifier.height(24.dp))
+            FoxTitle(text = "Quelle montre utilisez-vous ?")
+            Spacer(modifier = Modifier.height(16.dp))
+            FoxSubtitle(text = "FoxOFF adapte sa recherche selon la marque de votre montre connectée.")
+
+            Spacer(modifier = Modifier.height(32.dp))
+
+            com.projectfox.foxoff.core.watch.WatchBrand.entries.forEach { brand ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(Color.White.copy(alpha = if (selectedBrand == brand) 0.12f else 0.05f))
+                        .selectable(
+                            selected = selectedBrand == brand,
+                            onClick = { selectedBrand = brand }
+                        )
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    RadioButton(selected = selectedBrand == brand, onClick = { selectedBrand = brand })
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = when (brand) {
+                            com.projectfox.foxoff.core.watch.WatchBrand.WEAR_OS -> "Wear OS (Samsung Galaxy Watch et compatibles)"
+                            com.projectfox.foxoff.core.watch.WatchBrand.GARMIN -> "Garmin (Connect IQ)"
+                        },
+                        color = Color.White
+                    )
+                }
+                Spacer(modifier = Modifier.height(12.dp))
+            }
+
+            Spacer(modifier = Modifier.weight(1f))
+            FoxButton(text = "Continuer", onClick = {
+                val activeBrand = com.projectfox.foxoff.core.application.WatchSettings.getWatchBrand(context)
+                if (selectedBrand != activeBrand) {
+                    // Changement de marque : le transport actif (résolu une
+                    // seule fois par FoxCore.initialize() au démarrage du
+                    // processus) ne peut être remplacé qu'en relançant l'app
+                    // — même mécanisme que SettingsScreen "Changer de montre".
+                    com.projectfox.foxoff.core.application.WatchSettings.saveWatchBrand(context, selectedBrand)
+                    com.projectfox.foxoff.core.application.WatchSettings.clearKnownDevice(context)
+                    val intent = android.content.Intent(context, com.projectfox.foxoff.MainActivity::class.java).apply {
+                        flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK
+                    }
+                    context.startActivity(intent)
+                } else {
+                    onNext()
+                }
+            })
+        }
+    }
+}
+
 @Composable
 fun WatchDetectionScreen(onNext: () -> Unit) {
     val core = com.projectfox.foxoff.core.application.FoxCore
     val context = LocalContext.current
     val watchInfo by core.watchInfo.collectAsState()
     val isSearching = watchInfo == null
+    val watchBrand = remember {
+        com.projectfox.foxoff.core.application.WatchSettings.getWatchBrand(context)
+    }
 
     LaunchedEffect(Unit) {
         if (watchInfo == null) {
@@ -413,13 +595,18 @@ fun WatchDetectionScreen(onNext: () -> Unit) {
         }
     }
 
-    FoxGradientBackground {
+    FoxOnboardingBackground {
         Column(modifier = Modifier.fillMaxSize().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            FoxProgressConnection(step = 4)
+            FoxProgressConnection(step = 6)
             Spacer(modifier = Modifier.height(24.dp))
             FoxTitle(text = "Détection de votre montre")
             Spacer(modifier = Modifier.height(16.dp))
-            FoxSubtitle(text = "FoxOFF recherche votre Galaxy Watch.")
+            FoxSubtitle(
+                text = when (watchBrand) {
+                    com.projectfox.foxoff.core.watch.WatchBrand.WEAR_OS -> "FoxOFF recherche votre Galaxy Watch."
+                    com.projectfox.foxoff.core.watch.WatchBrand.GARMIN -> "FoxOFF recherche votre montre Garmin."
+                }
+            )
             
             Spacer(modifier = Modifier.height(48.dp))
             
@@ -469,14 +656,14 @@ fun TvDetectionScreen(onNext: (String) -> Unit, onSkip: () -> Unit) {
         tvEngine?.initialize()
     }
 
-    FoxGradientBackground {
+    FoxOnboardingBackground {
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            FoxProgressConnection(step = 5)
+            FoxProgressConnection(step = 7)
             Spacer(modifier = Modifier.height(24.dp))
             FoxTitle(text = "Configuration TV")
             Spacer(modifier = Modifier.height(16.dp))
@@ -550,9 +737,9 @@ fun TvDetectionScreen(onNext: (String) -> Unit, onSkip: () -> Unit) {
 
 @Composable
 fun SetupCompleteScreen(onFinish: () -> Unit) {
-    FoxGradientBackground {
+    FoxOnboardingBackground {
         Column(modifier = Modifier.fillMaxSize().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-            FoxProgressConnection(step = 7)
+            FoxProgressConnection(step = 8)
             Spacer(modifier = Modifier.weight(1f))
             FoxAnimatedLogo()
             Spacer(modifier = Modifier.height(32.dp))
@@ -584,9 +771,9 @@ fun TvPairingScreen(deviceId: String?, onNext: () -> Unit) {
         }
     }
 
-    FoxGradientBackground {
+    FoxOnboardingBackground {
         Column(modifier = Modifier.fillMaxSize().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            FoxProgressConnection(step = 6)
+            FoxProgressConnection(step = 8)
             Spacer(modifier = Modifier.height(24.dp))
             FoxTitle(text = "Appairage de la télévision")
             Spacer(modifier = Modifier.height(16.dp))
@@ -659,10 +846,6 @@ fun TvPairingScreen(deviceId: String?, onNext: () -> Unit) {
         }
     }
 }
-
-@androidx.compose.ui.tooling.preview.Preview
-@Composable
-fun PreviewSplash() { com.projectfox.foxoff.ui.theme.FoxTheme { SplashScreen {} } }
 
 @androidx.compose.ui.tooling.preview.Preview
 @Composable

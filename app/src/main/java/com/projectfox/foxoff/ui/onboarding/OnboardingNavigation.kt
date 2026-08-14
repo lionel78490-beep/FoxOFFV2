@@ -16,16 +16,13 @@ fun OnboardingNavigation(onFinish: () -> Unit) {
 
     NavHost(
         navController = navController,
-        startDestination = "splash"
+        // "welcome" (renard sur la lune) est désormais le tout premier
+        // écran affiché au lancement — l'écran "splash" (animation
+        // "FOXOFF" avec pause noire avant) a été retiré du flux, demande
+        // explicite du 2026-08-14 ("2 écrans avant celui-ci, supprime
+        // les").
+        startDestination = "welcome"
     ) {
-        composable("splash") {
-            SplashScreen(onAnimationFinished = {
-                navController.navigate("welcome") {
-                    popUpTo("splash") { inclusive = true }
-                }
-            })
-        }
-        
         composable(
             "welcome",
             enterTransition = { slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.Start, tween(700)) },
@@ -47,7 +44,23 @@ fun OnboardingNavigation(onFinish: () -> Unit) {
             enterTransition = { slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.Start, tween(700)) },
             exitTransition = { slideOutOfContainer(AnimatedContentTransitionScope.SlideDirection.Start, tween(700)) }
         ) {
-            ActiveHoursScreen(onNext = { navController.navigate("watch_detection") })
+            ActiveHoursScreen(onNext = { navController.navigate("phone_media_pause") })
+        }
+
+        composable(
+            "phone_media_pause",
+            enterTransition = { slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.Start, tween(700)) },
+            exitTransition = { slideOutOfContainer(AnimatedContentTransitionScope.SlideDirection.Start, tween(700)) }
+        ) {
+            PhoneMediaPauseScreen(onNext = { navController.navigate("watch_brand") })
+        }
+
+        composable(
+            "watch_brand",
+            enterTransition = { slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.Start, tween(700)) },
+            exitTransition = { slideOutOfContainer(AnimatedContentTransitionScope.SlideDirection.Start, tween(700)) }
+        ) {
+            WatchBrandScreen(onNext = { navController.navigate("watch_detection") })
         }
 
         composable(

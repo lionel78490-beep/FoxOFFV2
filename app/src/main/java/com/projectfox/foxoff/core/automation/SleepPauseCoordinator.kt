@@ -190,6 +190,18 @@ object SleepPauseCoordinator {
             // des communications montre (voir sendToWatch), aucun risque si
             // la montre est injoignable.
             FoxCore.sendToWatch(it, "/foxoff/movement_low_power")
+            // Pause de la lecture média active sur le téléphone lui-même
+            // (vidéo, musique — YouTube, Spotify...), en plus de la TV.
+            // Best-effort : ne fait rien si l'accès aux notifications n'a
+            // pas été accordé (voir PhoneMediaPauseController).
+            val pausedMediaCount = com.projectfox.foxoff.core.media.PhoneMediaPauseController.pauseAllActiveMedia(it)
+            if (pausedMediaCount > 0) {
+                NightLog.record(
+                    it,
+                    NightLogType.PAUSE_EXECUTED,
+                    "Média téléphone : $pausedMediaCount lecture(s) mise(s) en pause"
+                )
+            }
         }
     }
 

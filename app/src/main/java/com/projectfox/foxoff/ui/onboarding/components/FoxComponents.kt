@@ -1,10 +1,13 @@
 package com.projectfox.foxoff.ui.onboarding.components
 
 import androidx.compose.animation.core.*
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -12,10 +15,23 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.translate
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.ExperimentalTextApi
+import androidx.compose.ui.text.font.Font
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontVariation
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.projectfox.foxoff.ui.theme.*
@@ -41,6 +57,43 @@ fun FoxGradientBackground(content: @Composable BoxScope.() -> Unit) {
     }
 }
 
+/**
+ * Fond "ciel étoilé + forêt" (bg_welcome_night.jpg, fourni par
+ * l'utilisateur pour WelcomeScreen le 2026-08-14, étendu à tout le flux
+ * d'onboarding sur demande explicite — "rajoute le fond forêt et ciel
+ * étoilé sur toutes les pages"). Distinct de [FoxGradientBackground],
+ * volontairement laissé inchangé pour Réglages/Accueil/Télécommande, hors
+ * du périmètre de cette demande.
+ */
+@Composable
+fun FoxOnboardingBackground(content: @Composable BoxScope.() -> Unit) {
+    Box(modifier = Modifier.fillMaxSize()) {
+        Image(
+            painter = painterResource(id = com.projectfox.foxoff.R.drawable.bg_welcome_night),
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxSize()
+        )
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.25f))
+        )
+        // navigationBarsPadding() sur le contenu (pas sur l'image/le voile,
+        // qui restent plein cadre derrière la barre système) — sans ça, le
+        // bouton du bas de chaque écran est rogné par la barre de
+        // navigation 3 boutons sur certains appareils (constaté par
+        // l'utilisateur sur Galaxy Z Fold 6, 2026-08-14) : les 24dp de
+        // marge fixe de chaque écran ne suffisent pas à eux seuls.
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .navigationBarsPadding(),
+            content = content
+        )
+    }
+}
+
 @Composable
 fun FoxAnimatedLogo(modifier: Modifier = Modifier, size: Int = 100) {
     val infiniteTransition = rememberInfiniteTransition(label = "logo")
@@ -59,6 +112,129 @@ fun FoxAnimatedLogo(modifier: Modifier = Modifier, size: Int = 100) {
         fontSize = size.sp,
         modifier = modifier.scale(scale)
     )
+}
+
+// Orange plus vibrant que l'ancien FoxHomeOrange (0xFFFFA000) — demande
+// explicite du brief typographique du 2026-08-14 ("vibrant warm orange",
+// le symbole power doit être le point focal du wordmark).
+private val FoxWordmarkOrange = Color(0xFFFF7A1A)
+
+// Police géométrique "Outfit" (SIL OFL, voir docs/licenses/OUTFIT_FONT_OFL.txt)
+// — remplace la police système par défaut pour coller au brief du
+// 2026-08-14 : "modern premium sans-serif, clean geometric shapes,
+// rounded but professional, slightly futuristic". Police variable :
+// FontVariation.weight(...) sélectionne explicitement l'instance désirée,
+// Compose ne la choisit pas automatiquement sans ça. Deux graisses
+// distinctes ("La police de Fox est plus grasse que celle de OFF",
+// 2e brief du 2026-08-14) : Black (900) pour "Fox", Bold (700) pour "FF".
+@OptIn(ExperimentalTextApi::class)
+private val OutfitBlack = FontFamily(
+    Font(
+        com.projectfox.foxoff.R.font.outfit_variable,
+        weight = FontWeight.Black,
+        variationSettings = FontVariation.Settings(FontVariation.weight(900))
+    )
+)
+
+@OptIn(ExperimentalTextApi::class)
+private val OutfitBold = FontFamily(
+    Font(
+        com.projectfox.foxoff.R.font.outfit_variable,
+        weight = FontWeight.Bold,
+        variationSettings = FontVariation.Settings(FontVariation.weight(700))
+    )
+)
+
+/**
+ * Logo "Fox⏻FF" — reproduit fidèlement le brief typographique fourni par
+ * l'utilisateur (2026-08-14) : "Fox" et "FF" en blanc (plus de bleu — la
+ * version précédente colorait "FF" en FoxElectricBlue, changement
+ * explicite ici), seul le symbole power est le point focal orange, avec
+ * un léger halo ("subtle glow ... no excessive neon effect").
+ */
+@Composable
+fun FoxWordmark(modifier: Modifier = Modifier, fontSize: TextUnit = 44.sp) {
+    Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            text = "Fox",
+            fontSize = fontSize,
+            fontFamily = OutfitBlack,
+            fontWeight = FontWeight.Black,
+            color = Color.White
+        )
+        PowerGlyph(
+            size = (fontSize.value * 1.0f).dp,
+            modifier = Modifier.padding(horizontal = 4.dp)
+        )
+        Text(
+            text = "FF",
+            fontSize = fontSize,
+            fontFamily = OutfitBold,
+            fontWeight = FontWeight.Bold,
+            color = Color.White
+        )
+    }
+}
+
+/**
+ * Symbole power ⏻ dessiné à la main (arc + trait vertical, `Canvas`) plutôt
+ * que l'icône Material `PowerSettingsNew` : cette dernière a une épaisseur
+ * de trait fixe, impossible à épaissir ("fait le plus épais", 2026-08-14).
+ * Dessiner la forme nous-mêmes donne un contrôle direct sur `strokeWidthPx`.
+ * Dégradé + copie sombre décalée pour le rendu "en relief" (même esprit
+ * que l'ancienne version à base d'Icon, mais un Brush s'applique
+ * nativement à drawArc/drawLine — plus besoin du hack BlendMode.SrcAtop).
+ */
+@Composable
+private fun PowerGlyph(size: Dp, modifier: Modifier = Modifier) {
+    Canvas(modifier = modifier.size(size)) {
+        val strokeWidthPx = this.size.minDimension * 0.17f
+        val radius = this.size.minDimension * 0.34f
+        val center = Offset(this.size.width / 2f, this.size.height / 2f)
+        val arcTopLeft = Offset(center.x - radius, center.y - radius)
+        val arcSize = Size(radius * 2f, radius * 2f)
+        val lineTop = Offset(center.x, center.y - radius * 1.35f)
+        val lineBottom = Offset(center.x, center.y - radius * 0.05f)
+
+        translate(left = 1.dp.toPx(), top = 2.dp.toPx()) {
+            drawArc(
+                color = Color.Black.copy(alpha = 0.35f),
+                startAngle = -55f,
+                sweepAngle = 290f,
+                useCenter = false,
+                topLeft = arcTopLeft,
+                size = arcSize,
+                style = Stroke(width = strokeWidthPx, cap = StrokeCap.Round)
+            )
+            drawLine(
+                color = Color.Black.copy(alpha = 0.35f),
+                start = lineTop,
+                end = lineBottom,
+                strokeWidth = strokeWidthPx,
+                cap = StrokeCap.Round
+            )
+        }
+
+        val brush = Brush.verticalGradient(
+            colors = listOf(Color(0xFFFFD54F), FoxWordmarkOrange, Color(0xFFB33D00))
+        )
+        drawArc(
+            brush = brush,
+            startAngle = -55f,
+            sweepAngle = 290f,
+            useCenter = false,
+            topLeft = arcTopLeft,
+            size = arcSize,
+            style = Stroke(width = strokeWidthPx, cap = StrokeCap.Round)
+        )
+        drawLine(
+            brush = brush,
+            start = lineTop,
+            end = lineBottom,
+            strokeWidth = strokeWidthPx,
+            cap = StrokeCap.Round
+        )
+    }
 }
 
 @Composable
@@ -92,7 +268,8 @@ fun FoxButton(
     text: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    enabled: Boolean = true
+    enabled: Boolean = true,
+    gradient: List<Color> = FoxGradient
 ) {
     Box(
         modifier = modifier
@@ -100,7 +277,7 @@ fun FoxButton(
             .height(64.dp)
             .clip(RoundedCornerShape(32.dp))
             .background(
-                if (enabled) Brush.horizontalGradient(FoxGradient) 
+                if (enabled) Brush.horizontalGradient(gradient)
                 else Brush.horizontalGradient(listOf(Color.DarkGray, Color.Gray))
             )
             .clickable(enabled = enabled) { onClick() },
@@ -141,7 +318,7 @@ fun FoxSubtitle(text: String, modifier: Modifier = Modifier) {
 }
 
 @Composable
-fun FoxProgressConnection(step: Int, totalSteps: Int = 7) {
+fun FoxProgressConnection(step: Int, totalSteps: Int = 8) {
     val progress = step.toFloat() / totalSteps.toFloat()
     val animatedProgress by animateFloatAsState(targetValue = progress, label = "progress")
 

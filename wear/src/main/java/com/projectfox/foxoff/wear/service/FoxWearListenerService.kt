@@ -27,6 +27,12 @@ class FoxWearListenerService : WearableListenerService() {
         } else if (messageEvent.path == "/foxoff/movement_normal_power") {
             FoxWearLogger.i("FOX-WEAR | TV rallumée -> retour du mouvement en fréquence normale")
             FoxWearApplication.core.setMovementLowPowerMode(false)
+        } else if (messageEvent.path == "/foxoff/monitoring_stop") {
+            FoxWearLogger.i("FOX-WEAR | Hors plage horaire choisie -> arrêt complet des capteurs")
+            FoxWearApplication.core.setMonitoringActive(false)
+        } else if (messageEvent.path == "/foxoff/monitoring_start") {
+            FoxWearLogger.i("FOX-WEAR | Entrée dans une plage horaire choisie -> reprise des capteurs")
+            FoxWearApplication.core.setMonitoringActive(true)
         }
     }
 

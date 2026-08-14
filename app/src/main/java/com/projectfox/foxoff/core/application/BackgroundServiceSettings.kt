@@ -31,16 +31,14 @@ object BackgroundServiceSettings {
     val enabledState: StateFlow<Boolean> = _enabledState.asStateFlow()
 
     fun isEnabled(context: Context): Boolean {
-        val value = context.applicationContext
-            .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val value = com.projectfox.foxoff.core.security.FoxEncryptedPrefs.get(context, PREFS_NAME)
             .getBoolean(KEY_ENABLED, false)
         _enabledState.value = value
         return value
     }
 
     fun setEnabled(context: Context, enabled: Boolean) {
-        context.applicationContext
-            .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        com.projectfox.foxoff.core.security.FoxEncryptedPrefs.get(context, PREFS_NAME)
             .edit()
             .putBoolean(KEY_ENABLED, enabled)
             .apply()
@@ -56,14 +54,12 @@ object BackgroundServiceSettings {
      * continuant l'onboarding sans y toucher.
      */
     fun hasSeenPrompt(context: Context): Boolean {
-        return context.applicationContext
-            .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        return com.projectfox.foxoff.core.security.FoxEncryptedPrefs.get(context, PREFS_NAME)
             .getBoolean(KEY_PROMPT_SEEN, false)
     }
 
     fun markPromptSeen(context: Context) {
-        context.applicationContext
-            .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        com.projectfox.foxoff.core.security.FoxEncryptedPrefs.get(context, PREFS_NAME)
             .edit()
             .putBoolean(KEY_PROMPT_SEEN, true)
             .apply()

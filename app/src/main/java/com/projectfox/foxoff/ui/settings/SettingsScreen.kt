@@ -54,6 +54,7 @@ fun SettingsScreen() {
     val context = LocalContext.current
 
     var notificationDenied by remember { mutableStateOf(false) }
+    var bluetoothDenied by remember { mutableStateOf(false) }
     var showResetOnboardingConfirm by remember { mutableStateOf(false) }
     var showChangeWatchDialog by remember { mutableStateOf(false) }
     // Ne change que via cet écran, qui redémarre l'Activity juste après
@@ -75,6 +76,23 @@ fun SettingsScreen() {
     val selectedSlots by ActiveHoursSettings.selectedSlotsState.collectAsState()
     LaunchedEffect(Unit) {
         ActiveHoursSettings.getSelectedSlots(context)
+    }
+    // Accès "Accès aux notifications" (pause média téléphone, voir
+    // PhoneMediaPauseController) — état système, pas de miroir StateFlow
+    // dédié : revérifié à chaque retour au premier plan (l'octroi se fait
+    // dans une app Réglages externe, pas de callback direct).
+    var hasPhoneMediaAccess by remember {
+        mutableStateOf(com.projectfox.foxoff.core.media.PhoneMediaPauseController.hasNotificationAccess(context))
+    }
+    val settingsLifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    DisposableEffect(settingsLifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                hasPhoneMediaAccess = com.projectfox.foxoff.core.media.PhoneMediaPauseController.hasNotificationAccess(context)
+            }
+        }
+        settingsLifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { settingsLifecycleOwner.lifecycle.removeObserver(observer) }
     }
     // Raison d'une désactivation AUTOMATIQUE (notification balayée,
     // prérequis devenus invalides, réconciliation au retour au premier
@@ -151,14 +169,31 @@ fun SettingsScreen() {
         context.stopService(Intent(context, FoxForegroundService::class.java))
     }
 
+    fun hasBluetoothPermission(): Boolean = Build.VERSION.SDK_INT < 31 ||
+            ContextCompat.checkSelfPermission(
+                context,
+                android.Manifest.permission.BLUETOOTH_CONNECT
+            ) == PackageManager.PERMISSION_GRANTED
+
+    fun hasNotificationPermission(): Boolean = Build.VERSION.SDK_INT < 33 ||
+            ContextCompat.checkSelfPermission(
+                context,
+                android.Manifest.permission.POST_NOTIFICATIONS
+            ) == PackageManager.PERMISSION_GRANTED
+
+    fun startIfAllowed() {
+        BackgroundServiceSettings.setEnabled(context, true)
+        BackgroundServiceDisableReason.set(null)
+        notificationDenied = false
+        bluetoothDenied = false
+        startService()
+    }
+
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
         if (granted) {
-            BackgroundServiceSettings.setEnabled(context, true)
-            BackgroundServiceDisableReason.set(null)
-            notificationDenied = false
-            startService()
+            startIfAllowed()
         } else {
             // Le réglage reste désactivé : décision de transparence propre à
             // FoxOFF, pas une obligation technique Android (voir
@@ -169,20 +204,41 @@ fun SettingsScreen() {
         }
     }
 
-    fun enableBackgroundSurveillance() {
-        val notificationsGranted = Build.VERSION.SDK_INT < 33 ||
-                ContextCompat.checkSelfPermission(
-                    context,
-                    android.Manifest.permission.POST_NOTIFICATIONS
-                ) == PackageManager.PERMISSION_GRANTED
-
-        if (notificationsGranted) {
-            BackgroundServiceSettings.setEnabled(context, true)
-            BackgroundServiceDisableReason.set(null)
-            notificationDenied = false
-            startService()
+    // Corrige un vrai crash constaté le 2026-08-14 sur émulateur :
+    // Context.startForegroundService() engage Android à ce que le service
+    // appelle Service.startForeground() sous quelques secondes.
+    // FoxForegroundService.prerequisitesMet() vérifie déjà BLUETOOTH_CONNECT
+    // en plus de la visibilité de la notification — mais si cette
+    // permission manque au moment de l'appel, le service s'arrête via
+    // failAndStop() SANS avoir appelé startForeground(), et Android tue
+    // alors TOUTE l'application (ForegroundServiceDidNotStartInTimeException),
+    // pas juste ce service. La permission est normalement déjà accordée
+    // pendant l'onboarding (écran Permissions), mais reste révocable à tout
+    // moment depuis les réglages système — d'où cette vérification AVANT
+    // startForegroundService(), jamais après. Même correctif appliqué à
+    // FoxHomeHero (Accueil), qui appelle ce même service.
+    val bluetoothPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            if (hasNotificationPermission()) {
+                startIfAllowed()
+            } else {
+                notificationPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+            }
         } else {
+            BackgroundServiceSettings.setEnabled(context, false)
+            bluetoothDenied = true
+        }
+    }
+
+    fun enableBackgroundSurveillance() {
+        if (!hasBluetoothPermission()) {
+            bluetoothPermissionLauncher.launch(android.Manifest.permission.BLUETOOTH_CONNECT)
+        } else if (!hasNotificationPermission()) {
             notificationPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+        } else {
+            startIfAllowed()
         }
     }
 
@@ -190,6 +246,7 @@ fun SettingsScreen() {
         BackgroundServiceSettings.setEnabled(context, false)
         BackgroundServiceDisableReason.set(null)
         notificationDenied = false
+        bluetoothDenied = false
         stopService()
     }
 
@@ -303,6 +360,16 @@ fun SettingsScreen() {
                         )
                     }
 
+                    if (bluetoothDenied) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "Autorisation Bluetooth refusée : nécessaire pour communiquer " +
+                                    "avec la montre, la surveillance n'a pas été activée.",
+                            color = Color(0xFFFF5252),
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+
                     // Désactivation AUTOMATIQUE décidée au retour au premier
                     // plan (voir FoxServiceReconciliation) — distincte du
                     // refus ponctuel ci-dessus, survient sans action de
@@ -346,6 +413,53 @@ fun SettingsScreen() {
                                 onClick = { toggleActiveHoursSlot(slot) },
                                 label = { Text(slot.label) }
                             )
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            FoxCard {
+                Column {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Pause du téléphone",
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = if (hasPhoneMediaAccess) "Accès accordé" else "Accès non accordé",
+                                color = if (hasPhoneMediaAccess) Color.Green else Color.Gray,
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        text = "En plus de la TV, met en pause la vidéo ou la musique en cours " +
+                                "sur ce téléphone (YouTube, Spotify...) au moment de " +
+                                "l'endormissement. Optionnel — nécessite l'accès spécial " +
+                                "\"Accès aux notifications\" d'Android.",
+                        color = Color.Gray,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    if (!hasPhoneMediaAccess) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        OutlinedButton(
+                            onClick = {
+                                context.startActivity(
+                                    Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
+                                )
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Activer l'accès aux notifications")
                         }
                     }
                 }

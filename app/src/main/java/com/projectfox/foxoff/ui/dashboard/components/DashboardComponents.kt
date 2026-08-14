@@ -2,9 +2,11 @@ package com.projectfox.foxoff.ui.dashboard.components
 
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -15,16 +17,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.projectfox.foxoff.R
 import com.projectfox.foxoff.brain.SleepState
 import com.projectfox.foxoff.core.application.ActiveHoursSlot
 import com.projectfox.foxoff.tv.TvConnectionStatus
 import com.projectfox.foxoff.ui.theme.FoxBlackSurface
-import com.projectfox.foxoff.ui.theme.FoxGradient
 import com.projectfox.foxoff.ui.theme.FoxHeartRed
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
@@ -298,6 +301,74 @@ fun TvDashboardCard(
     }
 }
 
+/**
+ * Renard animé — demande explicite de l'utilisateur ("rendre l'appli
+ * interactive"), sans nouvel asset (aucun outil de génération d'image
+ * disponible ici) : anime l'illustration existante
+ * (`ic_launcher_foreground`, même artwork que l'icône de l'app) par
+ * transformation Compose plutôt que par de nouveaux dessins.
+ *
+ * Deux comportements superposés :
+ * - "Respiration" continue (échelle + léger balancement) dont le rythme
+ *   ralentit et l'amplitude diminue à mesure que `state` s'approfondit
+ *   (AWAKE -> ASLEEP), pour donner un sentiment d'endormissement progressif
+ *   qui reflète l'état de surveillance en direct.
+ * - Petit rebond ludique au tap, indépendant de l'état — le côté
+ *   "interactif" demandé, sans rapport avec les données de sommeil.
+ */
+@Composable
+fun AnimatedFoxAvatar(state: SleepState, modifier: Modifier = Modifier) {
+    val (breathPeriodMs, breathAmplitude, swayDegrees) = when (state) {
+        SleepState.AWAKE -> Triple(900, 0.05f, 4f)
+        SleepState.DROWSY -> Triple(1600, 0.045f, 2.5f)
+        SleepState.PRE_SLEEP -> Triple(2400, 0.035f, 1.2f)
+        SleepState.ASLEEP -> Triple(3400, 0.02f, 0f)
+    }
+
+    val infiniteTransition = rememberInfiniteTransition(label = "foxBreath")
+    val breath by infiniteTransition.animateFloat(
+        initialValue = 1f - breathAmplitude,
+        targetValue = 1f + breathAmplitude,
+        animationSpec = infiniteRepeatable(
+            animation = tween(breathPeriodMs, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "foxBreathScale"
+    )
+    val sway by infiniteTransition.animateFloat(
+        initialValue = -swayDegrees,
+        targetValue = swayDegrees,
+        animationSpec = infiniteRepeatable(
+            animation = tween(breathPeriodMs * 2, easing = LinearOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "foxSway"
+    )
+
+    var tapped by remember { mutableStateOf(false) }
+    val tapScale by animateFloatAsState(
+        targetValue = if (tapped) 1.3f else 1f,
+        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMedium),
+        label = "foxTapScale",
+        finishedListener = { if (tapped) tapped = false }
+    )
+
+    Image(
+        painter = painterResource(id = R.drawable.ic_launcher_foreground),
+        contentDescription = null,
+        modifier = modifier
+            .graphicsLayer {
+                scaleX = breath * tapScale
+                scaleY = breath * tapScale
+                rotationZ = sway
+            }
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null
+            ) { tapped = true }
+    )
+}
+
 @Composable
 fun FoxAnalysisCard(
     state: SleepState,
@@ -306,15 +377,7 @@ fun FoxAnalysisCard(
 ) {
     PremiumDashboardCard {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                modifier = Modifier
-                    .size(48.dp)
-                    .clip(RoundedCornerShape(24.dp))
-                    .background(Brush.linearGradient(FoxGradient)),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(text = "🦊", fontSize = 24.sp)
-            }
+            AnimatedFoxAvatar(state = state, modifier = Modifier.size(56.dp))
             Spacer(modifier = Modifier.width(16.dp))
             Column {
                 Text(

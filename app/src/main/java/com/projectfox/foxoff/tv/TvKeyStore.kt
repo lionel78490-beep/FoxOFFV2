@@ -39,10 +39,7 @@ import org.bouncycastle.cert.jcajce.JcaX509ExtensionUtils
  */
 class TvKeyStore(private val context: Context) {
 
-    private val prefs = context.getSharedPreferences(
-        "foxoff_tv_identity_rsa_v1",
-        Context.MODE_PRIVATE
-    )
+    private val prefs = com.projectfox.foxoff.core.security.FoxEncryptedPrefs.get(context, "foxoff_tv_identity_rsa_v1")
     private var privateKey: PrivateKey? = null
     private var certificate: X509Certificate? = null
 
@@ -353,10 +350,10 @@ class TvKeyStore(private val context: Context) {
     private fun ByteArray.stripLeadingZero(): ByteArray = if (this.isNotEmpty() && this[0] == 0.toByte()) this.drop(1).toByteArray() else this
 
     fun savePairingKey(deviceId: String, key: String) {
-        context.getSharedPreferences("foxoff_tv_pairs", Context.MODE_PRIVATE).edit().putString("pairing_$deviceId", key).apply()
+        com.projectfox.foxoff.core.security.FoxEncryptedPrefs.get(context, "foxoff_tv_pairs").edit().putString("pairing_$deviceId", key).apply()
     }
 
-    fun getPairingKey(deviceId: String): String? = context.getSharedPreferences("foxoff_tv_pairs", Context.MODE_PRIVATE).getString("pairing_$deviceId", null)
+    fun getPairingKey(deviceId: String): String? = com.projectfox.foxoff.core.security.FoxEncryptedPrefs.get(context, "foxoff_tv_pairs").getString("pairing_$deviceId", null)
     
     /**
      * TEMPORARY: Export current certificate for external debugging.

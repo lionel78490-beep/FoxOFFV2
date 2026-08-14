@@ -37,10 +37,7 @@ class TvIdentity(
         private const val HOSTNAME = "atvremote"
     }
 
-    private val prefs = context.getSharedPreferences(
-        PREFS_NAME,
-        Context.MODE_PRIVATE
-    )
+    private val prefs = com.projectfox.foxoff.core.security.FoxEncryptedPrefs.get(context, PREFS_NAME)
 
     private var privateKey: PrivateKey
     private var certificate: X509Certificate

@@ -242,7 +242,17 @@ class FoxWearCore(private val context: Context) {
         }
     }
 
+    // Suit l'état réel indépendamment de _isMonitoring (SharedFlow, pas
+    // directement lisible de façon synchrone) — sert de garde d'idempotence
+    // pour startMonitoring()/stopMonitoring(), désormais appelables à
+    // distance (voir setMonitoringActive ci-dessous) et donc potentiellement
+    // redondants (deux messages /foxoff/monitoring_stop rapprochés ne
+    // doivent pas arrêter des moteurs déjà arrêtés).
+    @Volatile
+    private var monitoringActive = false
+
     suspend fun startMonitoring() {
+        if (monitoringActive) return
         FoxWearLogger.i("Starting monitoring")
         engine?.start()
         passiveEngine?.let { passive ->
@@ -250,17 +260,39 @@ class FoxWearCore(private val context: Context) {
             _passiveDiagnostic.update { it.copy(started = passive.lastError == null, lastError = passive.lastError) }
         }
         movementEngine.start()
+        monitoringActive = true
         _isMonitoring.emit(true)
         _status.emit("RUNNING")
     }
 
     suspend fun stopMonitoring() {
+        if (!monitoringActive) return
         FoxWearLogger.i("Stopping monitoring")
         engine?.stop()
         passiveEngine?.stop()
         movementEngine.stop()
+        monitoringActive = false
         _isMonitoring.emit(false)
         _status.emit("READY")
+    }
+
+    /**
+     * Piloté par le téléphone selon les plages horaires choisies par
+     * l'utilisateur (voir ActiveHoursSettings/FoxServiceReconciliation côté
+     * téléphone) — messages /foxoff/monitoring_stop et
+     * /foxoff/monitoring_start (voir FoxWearListenerService). Contrairement
+     * à setMovementLowPowerMode(), qui ne fait que ralentir le mouvement
+     * après la pause TV, ceci arrête RÉELLEMENT tous les capteurs (BPM actif,
+     * BPM passif, mouvement) : hors plage horaire choisie, la montre n'a
+     * plus aucune raison de mesurer quoi que ce soit. Best-effort comme le
+     * reste des commandes montre — sans effet si le message n'arrive jamais
+     * (montre injoignable), la montre continue simplement de fonctionner
+     * comme avant cette fonctionnalité.
+     */
+    fun setMonitoringActive(active: Boolean) {
+        scope.launch {
+            if (active) startMonitoring() else stopMonitoring()
+        }
     }
 
     /**

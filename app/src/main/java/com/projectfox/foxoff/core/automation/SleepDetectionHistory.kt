@@ -60,8 +60,7 @@ object SleepDetectionHistory {
     }
 
     private fun loadFromPrefs(context: Context): List<SleepDetectionRecord> {
-        val raw = context.applicationContext
-            .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val raw = com.projectfox.foxoff.core.security.FoxEncryptedPrefs.get(context, PREFS_NAME)
             .getString(KEY_RECORDS, null) ?: return emptyList()
         return try {
             val array = JSONArray(raw)
@@ -91,8 +90,7 @@ object SleepDetectionHistory {
                     .put("outcome", entry.outcome.name)
             )
         }
-        context.applicationContext
-            .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        com.projectfox.foxoff.core.security.FoxEncryptedPrefs.get(context, PREFS_NAME)
             .edit()
             .putString(KEY_RECORDS, array.toString())
             .apply()

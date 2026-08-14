@@ -96,6 +96,25 @@ object FoxCore {
             launch {
                 eventBus.subscribeAs<SensorEvent.HeartRateReceived>().collectLatest { event ->
                     FoxLogger.i("FOX-CORE | Orchestrator | BPM reçu -> Brain")
+                    // NightLogType.HEART_RATE_TREND existait déjà (déclaré,
+                    // affiché dans HistoryScreen.kt) mais n'était jamais
+                    // enregistré nulle part — branché ici (2026-08-14) pour
+                    // diagnostiquer un vrai écart constaté entre
+                    // l'endormissement détecté par Samsung Health (00h23) et
+                    // par FoxOFF (02h31) une nuit où le BPM était pourtant
+                    // déjà bas et stable dès 00h07 : bpmDropBonus
+                    // (FoxBrain.kt) ne peut s'accorder qu'une fois par
+                    // échantillon BPM RÉELLEMENT reçu, et rien ne garantit
+                    // la cadence de livraison du BPM passif côté Health
+                    // Services (PassiveMonitoringEngine.kt côté montre,
+                    // aucun intervalle configurable, entièrement décidé par
+                    // l'OS/le matériel). Cette entrée permet de mesurer sur
+                    // une prochaine nuit l'écart réel entre deux échantillons
+                    // BPM consécutifs, plutôt que de le déduire indirectement
+                    // des changements d'état déjà loggés (SLEEP_STATE_CHANGE,
+                    // qui ne se déclenchent que sur un changement de
+                    // catégorie ou de raison de score, pas à chaque BPM).
+                    NightLog.record(context, NightLogType.HEART_RATE_TREND, "${event.sample.bpm.toInt()} bpm")
                     brain.onEvent(FoxBrainEvent.HeartRateReceived(event.sample.bpm, "WEAR"))
                 }
             }

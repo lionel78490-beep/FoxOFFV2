@@ -387,6 +387,13 @@ classes protobuf régénérées automatiquement par Gradle, contrôle fiable et
 reconnexion validée sur la TV principale. Pas de sélection multi-appareils
 — ce n'est pas dans le périmètre.
 
+✅ **Fait (2026-08-12)**, hors séquence (demande explicite, suppression
+rapide n'attendant pas la fin de Phase 4) : icône corbeille à côté de
+chaque TV dans "Mes TV" (`TvPairedCard`, `RemoteScreen.kt`), avec boîte de
+dialogue de confirmation avant suppression (action destructive). Réutilise
+`FoxTvEngine.removeDevice(id)`, déjà existant et testé (gère notamment la
+promotion d'une autre TV en "utilisée" si celle supprimée l'était).
+
 **DoD** : build debug/release · tests verts · parcours principal testé · zéro régression · doc à jour · commit dédié.
 
 **Effort estimé** : 2 semaines (périmètre élargi par le nettoyage legacy identifié en audit).
@@ -567,6 +574,29 @@ Phase 8 (voir "Décisions repoussées").
 
   Sources : [FitMesh — sync Garmin/Samsung Health/Health Connect](https://www.fitmesh.fit/en/blog/sync-garmin-samsung-health-guide),
   [forums.garmin.com — Health Connect sync](https://forums.garmin.com/apps-software/mobile-apps-web/f/connect-iq-store-android/339240/let-s-sync-garmin-data-to-health-connect-and-google-fit-apps).
+- ✅ **Fait (2026-08-13)** : `garmin/manifest.xml` déclare désormais 136
+  montres (au lieu de 3 : vivoactive4s/5/6 uniquement) — demande explicite
+  ("rajoute toute les montres compatible avec notre application"). Liste
+  construite à partir des 166 appareils installés dans le SDK Manager
+  (Connect IQ 9.2.0), en excluant délibérément les appareils Connect IQ
+  non pertinents pour une app portée au poignet la nuit : Edge (ordinateurs
+  de vélo, montés sur guidon, aucun capteur cardiaque intégré) et les GPS
+  de randonnée/moto portatifs (etrex, gpsmap, montana, oregon, rino) —
+  techniquement compatibles Connect IQ mais jamais portés au poignet ni au
+  coucher. Deux exclusions supplémentaires détectées directement par le
+  compilateur (`fr45`, `garminswim2` : pas de support réel du type
+  d'application "watch-app" malgré une apparence de montre classique).
+  Compilé avec succès en un seul package multi-appareils
+  (`monkeyc -e`, `garmin/build/FoxOffGarmin.iq`, 185 variantes internes
+  construites, aucune erreur) — SDK Connect IQ 9.2.0 installé et utilisé en
+  ligne de commande (`monkeyc.bat` via le JRE d'Android Studio, `java`
+  n'étant pas dans le PATH système). Avertissements cosmétiques uniquement
+  (icône de lancement 40×40 mise à l'échelle sur des appareils attendant
+  60-70×70 — pas bloquant, juste moins net visuellement sur certains
+  modèles). **Statut : compilé avec succès, non testé sur aucun matériel
+  Garmin réel** (comme le reste du transport Garmin cette session) — les
+  136 appareils n'ont donc pas de garantie de bon fonctionnement à l'usage,
+  seulement de compilation réussie.
 - ✅ **Détection accélérée (2026-08-10), décision produit** : au rythme
   précédent (`bpmDropBonus` 5% toutes les `sustainedBpmDropDuration` = 5
   min), atteindre ASLEEP (90%) depuis zéro demandait ~90 minutes de BPM bas
@@ -614,6 +644,41 @@ Phase 8 (voir "Décisions repoussées").
   notamment pour repérer un réveil (`FoxCore.kt`, souscription
   `MovementDetected`). Sans effet sur la détection de sommeil elle-même
   (le filtre ne s'active qu'APRÈS la pause).
+- ✅ **Fait (2026-08-12)** : pénalité de mouvement rééquilibrée
+  (`significantMovementPenalty` : 15% → 8%). Diagnostiqué à partir d'une
+  vraie nuit de test : endormissement réel vers 23h25-23h30 (confirmé par
+  Samsung Health à 5 min près et par le ressenti de l'utilisateur), mais
+  FoxOFF ne l'a confirmé qu'à 00h45 — 1h15 de retard alors que le BPM était
+  déjà bas et stable dès 23h24. Cause : deux mouvements "importants"
+  ordinaires en s'endormant (se retourner, ajuster l'oreiller) ont chacun
+  fait retomber le score à AWAKE, obligeant à reconstituer plusieurs cycles
+  entiers de `bpmDropBonus` (18% / 3 min) pour un coût de pénalité (15%)
+  presque équivalent à un cycle de bonus complet — quasi-annulation du
+  gain de vitesse de detection ajouté le 2026-08-10. 8% reste un vrai
+  signal sans effacer la quasi-totalité du dernier cycle de bonus à lui
+  seul. Vérifié : 43 tests `brain/` toujours verts (aucune valeur codée en
+  dur ne dépendait de l'ancienne pénalité). **Non revérifié sur une nuit
+  réelle** — à confirmer sur les prochaines nuits de test.
+- 🐛 **Correctif (2026-08-13)** : faux positif de pause réel constaté cette
+  nuit-là (23h23, utilisateur encore éveillé) — score passé de 76% à 94%
+  en 8 secondes avec un BPM en HAUSSE (71→79), franchissant le seuil
+  ASLEEP (90%). Cause : `minBpmToday` (le minimum BPM observé depuis le
+  début de la soirée) se fige dès la toute première lecture — cette
+  nuit-là 71 bpm, bien au-dessus du BPM de sommeil réel de l'utilisateur
+  (45-52 bpm sur les nuits validées) — et ne peut ensuite que baisser,
+  jamais remonter. Avec 12% de tolérance, un BPM de 79 restait "sous le
+  seuil" (71 × 1,12 ≈ 79,5) alors qu'il n'a rien d'un BPM de sommeil.
+  Défaut déjà documenté dans `SleepScoringConfig.bpmDropThreshold` comme
+  palliatif en attente d'un calibrage Health Connect fiable — devenu
+  possible depuis sa validation le 2026-08-10. Corrigé dans
+  `WeightedSleepAnalyzer`/`FoxBrain` : `minBpmToday`, une fois disponible,
+  ne peut plus qu'ABAISSER le seuil par rapport à `restingBpmBaseline`
+  calibré, jamais l'élever au-dessus. Le filet de sécurité "toujours là ?"
+  (montre + téléphone, voir Phase 6) s'est déclenché comme prévu au bon
+  moment mais n'a laissé que 10s pour répondre — insuffisant cette
+  nuit-là. Nouveau test unitaire dédié (`WeightedSleepAnalyzerTest`)
+  reproduisant exactement ce cas. **Statut : compilé, tests verts
+  (44 tests `brain/`), non revérifié sur une nuit réelle** — à confirmer.
 
 **DoD** : build debug/release · tests verts · parcours principal testé · zéro régression · doc à jour · commit dédié.
 
@@ -728,6 +793,128 @@ demander quoi que ce soit d'exceptionnel à l'utilisateur.
   ajoutée en haut de l'Accueil (`ActiveHoursInfoCard`, sous le statut
   principal) pour voir le choix en cours d'un coup d'œil sans passer par
   Réglages.
+- ✅ **Fait (2026-08-12)** : arrêt du "visibility watchdog" après la pause
+  TV. Diagnostiqué à partir d'une vraie nuit de test (batterie du
+  téléphone : 50% au coucher → 10% au réveil, ≈4,9%/h, plus élevé
+  qu'attendu malgré les optimisations déjà en place). Trouvé dans
+  `FoxForegroundService.kt` : `startVisibilityWatchdog()` (vérifie que la
+  notification de surveillance reste visible) tournait toutes les 60s
+  **sans jamais s'arrêter**, contrairement au heartbeat (15 min, stoppé
+  dès `tvIsPaused`) — environ 480 réveils/nuit contre ~32. Corrigé pour
+  s'arrêter selon la même logique que le heartbeat une fois la TV en
+  pause, et reprendre avec lui à la réouverture de l'app
+  (`restartHeartbeatIfStopped()` couvre maintenant les deux boucles,
+  indépendamment via deux flags `Volatile` séparés). Compromis assumé et
+  choisi explicitement avec l'utilisateur : si la notification est
+  révoquée après la pause, la surveillance BPM continue silencieusement
+  jusqu'au matin plutôt que de s'arrêter en moins d'une minute — acceptable
+  une fois l'objectif principal de la nuit (pause TV) déjà atteint.
+  **Statut : compilé et vérifié par build complet, non revérifié sur une
+  nuit réelle** — à confirmer sur les prochaines nuits de test.
+- ✅ **Fait (2026-08-12)** : première étape vers la pause automatique
+  au-delà de la seule TV — demande explicite de l'utilisateur ("à terme
+  l'application mettra pause au vidéo du téléphone ainsi que les
+  applications de musique"). `PhoneMediaPauseController` met en pause
+  toute lecture active sur le téléphone lui-même (YouTube, Spotify,
+  Netflix...) **en plus** de la TV, via `MediaSessionManager
+  .getActiveSessions()` — la seule API Android pour découvrir et
+  contrôler la lecture média d'autres apps, qui exige l'accès spécial
+  "Accès aux notifications" (`FoxNotificationListenerService`, un
+  `NotificationListenerService` sans logique propre, uniquement présent
+  comme point d'ancrage pour cette permission — FoxOFF ne lit jamais le
+  contenu des notifications). Best-effort comme le reste des interactions
+  montre/TV : ne fait rien si l'accès n'est pas accordé. Demandée dès
+  l'installation (nouvelle étape d'onboarding `PhoneMediaPauseScreen`,
+  entre Créneaux horaires et Détection montre) mais **non bloquante** —
+  "Continuer" reste toujours actif ; rappel disponible dans Réglages pour
+  l'activer plus tard. Câblé dans `SleepPauseCoordinator.executePause()`,
+  journalisé dans l'Historique (nombre de lectures effectivement mises en
+  pause). **Statut : compilé et vérifié par build complet, non testé sur
+  matériel réel** (même limite que Garmin/confirmation "toujours là" —
+  nécessite un vrai téléphone avec une app média en cours de lecture pour
+  valider).
+- 🐛 **Correctif (2026-08-13)** : le heartbeat de reconnexion montre/TV
+  (15 min) s'arrêtait complètement dès `tvIsPaused` (sommeil confirmé),
+  comme le visibility watchdog ci-dessus — mais pour lui, une régression
+  réelle : plus aucune revérification de `TvConnectionStatus` ne se
+  produisait ensuite, donc FoxOFF ne pouvait jamais détecter qu'une TV
+  remise en Play manuellement par l'utilisateur avait repris, tant que
+  l'app n'était pas rouverte (constaté : "j'ai remis play ça n'a pas
+  repris la surveillance"). Corrigé pour RALENTIR (15 → 30 min) plutôt que
+  s'arrêter — décision explicite de l'utilisateur, compromis batterie
+  assumé pour rester capable de détecter une reprise dans un délai
+  raisonnable. Le visibility watchdog, lui, garde son comportement d'arrêt
+  complet (décision distincte, non remise en cause).
+  `restartHeartbeatIfStopped()` simplifié en conséquence (ne couvre plus
+  que le watchdog). **Statut : compilé et vérifié par build complet, non
+  revérifié sur une nuit réelle** — à confirmer.
+- 🐛 **Raffinement (2026-08-13, même jour)** : demande explicite de
+  l'utilisateur — le heartbeat ralenti ne doit pas tourner à 30 min toute
+  la nuit. Impossible de détecter une vraie reprise pour s'arrêter au bon
+  moment (la télécommande Freebox envoie une simple touche Lecture/Pause à
+  l'aveugle, voir `TvCommandSender` — aucune API d'état TV branchée, champs
+  `TvDevice.isPlaying`/`TvEvent.PlaybackStateChanged` déclarés mais jamais
+  alimentés). Option choisie par l'utilisateur parmi 3 proposées : plafond
+  de temps simple. `POST_PAUSE_HEARTBEAT_MAX_DURATION` — passé ce délai
+  sans signal de reprise, le heartbeat s'arrête complètement
+  (`heartbeatStopped` réintroduit), comme avant le correctif ci-dessus,
+  mais après une fenêtre de rattrapage au lieu d'immédiatement. Ramené de
+  2h à 30 min le jour même (choix explicite de l'utilisateur) : avec
+  `POST_PAUSE_HEARTBEAT_INTERVAL_MS` = 30 min aussi, ça revient à UNE
+  seule reconnexion de rattrapage après la pause, puis arrêt complet.
+  `restartHeartbeatIfStopped()` couvre à nouveau les deux boucles.
+  **Statut : compilé et vérifié par build complet, non revérifié sur une
+  nuit réelle** — à confirmer.
+
+- ✅ **Fait (2026-08-13)** : la montre coupe désormais RÉELLEMENT ses
+  capteurs (BPM actif, BPM passif, mouvement) en dehors des plages
+  horaires choisies par l'utilisateur (`ActiveHoursSettings`), pas
+  seulement le téléphone. Jusqu'ici, `FoxServiceReconciliation` arrêtait
+  bien `FoxForegroundService` hors créneau, mais la montre continuait de
+  mesurer et d'envoyer en continu — aucun lien entre les deux. Nouveaux
+  chemins téléphone↔montre `/foxoff/monitoring_stop` /
+  `/foxoff/monitoring_start` (même pattern que
+  `/foxoff/movement_low_power`), envoyés uniquement lors d'une vraie
+  transition (`RealActions.start()/stop()/disableAndStop()`), jamais à
+  chaque vérification périodique de `FoxActiveHoursWorker` (15 min).
+  Côté montre, `FoxWearCore.setMonitoringActive()` appelle
+  `startMonitoring()`/`stopMonitoring()` (déjà existantes mais jamais
+  déclenchées après le lancement initial de l'app) — rendues idempotentes
+  (flag `monitoringActive`) pour rester sûres en cas de messages
+  redondants. Le service premier plan montre (notification + wake lock)
+  n'est volontairement PAS arrêté : seuls les capteurs le sont, pour ne
+  pas risquer que le processus montre soit tué par le système et devienne
+  injoignable pour le message de reprise. **Statut : compilé (app + wear)
+  et vérifié par build complet, non testé sur matériel réel** — à
+  confirmer sur une prochaine nuit/journée de test.
+
+- 🔎 **Diagnostic ajouté (2026-08-14)** : écart réel constaté sur une nuit
+  de test — endormissement détecté par Samsung Health à 00h23 contre
+  02h31 par FoxOFF, alors que le BPM était déjà bas et stable dès 00h07.
+  Analyse du journal : `bpmDropBonus` (`FoxBrain.kt`) ne peut s'accorder
+  qu'une seule fois par échantillon BPM RÉELLEMENT reçu (aucune minuterie
+  indépendante), et rien ne garantit la cadence de livraison du BPM
+  passif côté Health Services (`PassiveMonitoringEngine.kt`, aucun
+  intervalle configurable sur `PassiveMonitoringClient` — entièrement
+  décidé par l'OS/le matériel de la montre). Le score de cette nuit-là a
+  d'ailleurs bondi de 38% à 92% en 25 min une fois les mouvements
+  calmés, ce qui confirme que la formule fonctionne bien quand elle reçoit
+  des échantillons à un rythme correct — le vrai frein pendant les 2
+  premières heures est très probablement la fréquence d'arrivée du BPM,
+  pas les seuils de score déjà réglés cette session.
+  `NightLogType.HEART_RATE_TREND` existait déjà dans le code (déclaré,
+  affiché dans `HistoryScreen.kt`, jamais réellement enregistré) — branché
+  dans `FoxCore.kt` sur chaque `HeartRateReceived`, pour mesurer
+  précisément l'écart réel entre deux échantillons BPM consécutifs sur une
+  prochaine nuit, plutôt que de le déduire indirectement des changements
+  d'état déjà loggés (`SLEEP_STATE_CHANGE`, qui ne se déclenche que sur un
+  changement de catégorie ou de raison de score, pas à chaque BPM).
+  **Statut : compilé et vérifié par build complet — diagnostic pur, aucun
+  changement de comportement de détection.** Prochaine étape : analyser le
+  nouveau journal "BPM" après une nuit de test pour confirmer ou infirmer
+  l'hypothèse avant de décider d'un correctif (ex: renforcer le bonus
+  d'immobilité `stationaryDurationBonus`, qui lui dépend du mouvement —
+  échantillonné de façon fiable toutes les 30s — plutôt que du BPM).
 
 **Sortie (spécifique)** : cycle veille→endormissement→pause TV validé sur appareil réel, écran éteint, sur une nuit complète, sans relance manuelle et **sans** exemption batterie activée par défaut.
 
@@ -757,6 +944,213 @@ coller directement le texte dans une conversation. Stockage JSON borné à
 2000 entrées (SharedPreferences, même pattern que SleepDetectionHistory).
 Ne remplace pas les graphiques/historique multi-nuits prévus ici — c'est un
 outil de diagnostic ponctuel, pas une vue d'ensemble sur plusieurs nuits.
+
+✅ **Fait (2026-08-12)**, refonte de `WearHomeScreen` — demande explicite :
+"juste le renard qui affiche que l'application surveille l'endormissement",
+plus le tableau de bord technique brut (BPM, connexion, backend, diagnostic
+moteur passif) qui s'affichait par défaut jusque-là. Nouvel écran principal
+minimaliste : illustration du renard (`fox_sleeping_hero.png`, réutilise
+l'artwork généré pour l'icône/l'image de présentation Play Store — même
+fond `#00000A` que le reste de l'identité de marque) + un texte reflétant
+`isMonitoring` en direct. Le tableau de bord technique n'est pas supprimé
+(dépannage réel, notamment la note permanente Samsung sur le BPM écran
+éteint) — déplacé dans `WearDiagnosticsView`, sur un second onglet
+"Réglages" accessible par glissement horizontal (`HorizontalPager` de
+Compose Foundation + `HorizontalPageIndicator` de Wear Compose Material,
+motif standard sur Wear OS — nécessite un petit adaptateur
+`PagerIndicatorState` pour relier les deux API, incompatibles nativement).
+Nouvelle dépendance `androidx.compose.foundation:foundation` ajoutée
+(absente jusque-là du module wear). **Statut : compilé et vérifié par
+build complet, rendu visuel et geste de glissement non vérifiés sur
+matériel réel** (même limite que les autres écrans Wear cette session —
+aucun émulateur/appareil connecté dans cet environnement).
+
+✅ **Fait puis remplacé (2026-08-12, même jour)** : première version de
+l'indicateur actif/inactif sur l'accueil montre — renard teinté en vert
+(`ColorFilter.tint`) quand actif, couleurs d'origine sinon. L'utilisateur a
+demandé une autre représentation juste après ; voir l'entrée suivante pour
+la version retenue.
+
+✅ **Fait (2026-08-12, même jour)** : seconde version, retenue —
+"il veille" vs "il dort" plutôt qu'un changement de couleur — d'abord
+simulé par un halo doré pulsant + désaturation (aucun nouvel asset
+disponible à ce moment). Statut initial : compilé, non vérifié sur
+matériel réel.
+
+✅ **Fait (2026-08-12, même jour)** : remplacé par un vrai second asset —
+l'utilisateur a généré `fox_watching_hero.png` (yeux ouverts, même style
+exact que l'icône existante : médaillon circulaire, anneau bleu/orange,
+fond nuit, lune, étoiles) via un outil externe de génération d'image, à
+partir d'un prompt fourni. Recadré/détouré en cercle transparent 768×768
+avec PowerShell/System.Drawing (même méthode que les autres traitements
+d'image cette session — scan de la bounding box du contenu non blanc,
+masque elliptique avec léger inset pour couper le liseret d'anti-aliasing
+résiduel). `WearIdleScreen` bascule maintenant entre les deux vraies
+illustrations (`fox_watching_hero` actif / `fox_sleeping_hero` inactif)
+selon `isMonitoring`, avec juste une légère respiration (plus vive si
+actif) conservée en plus — le halo/la désaturation de code ne sont plus
+nécessaires. Statut : compilé et vérifié par build complet, rendu visuel
+non vérifié sur matériel réel.
+
+✅ **Fait (2026-08-12, même jour)** : les deux illustrations passent en
+plein écran (`ContentScale.Crop`, `Modifier.fillMaxSize()`) au lieu d'une
+petite icône centrée — demande explicite. Le cercle du badge déborde
+naturellement jusqu'aux bords d'un cadran rond puisque son fond sombre est
+déjà assorti à `FoxWatchBackground`. Le texte ("Fox veille sur vous" /
+"Fox dort") reste incrusté par-dessus, en bas de l'écran, sur un fond noir
+semi-opaque pour rester lisible quel que soit le contenu de l'image
+derrière. Statut : compilé, non vérifié sur matériel réel.
+
+✅ **Fait (2026-08-12)** : renard animé sur `FoxAnalysisCard` (Accueil
+téléphone) — demande explicite de l'utilisateur ("rendre l'appli
+interactive"), sans nouvel asset (aucun outil de génération d'image
+disponible ici) : anime l'illustration existante
+(`ic_launcher_foreground`, même artwork que l'icône de l'app) par
+transformation Compose (`graphicsLayer` — échelle + rotation) plutôt que
+par de nouveaux dessins. Deux comportements superposés dans
+`AnimatedFoxAvatar` (`DashboardComponents.kt`) : une "respiration"
+continue dont le rythme ralentit et l'amplitude diminue à mesure que
+`SleepState` s'approfondit (AWAKE rapide/ample → ASLEEP lent/quasi
+immobile, sans balancement), pour refléter l'état de surveillance en
+direct ; et un petit rebond ludique au tap, indépendant de l'état — le
+côté purement interactif demandé en plus. **Statut : compilé et vérifié
+par build complet, rendu visuel non vérifié en conditions réelles**
+(aucun émulateur/appareil connecté dans cet environnement).
+
+✅ **Fait (2026-08-14)** : refonte de l'Accueil téléphone en "centre de
+contrôle" à deux états dynamiques (demande explicite, gabarit précis
+fourni). Nouveau composant `FoxHomeHero` (`ui/dashboard/components/
+FoxHomeHero.kt`) inséré en haut de l'onglet Accueil existant, au-dessus
+des cartes déjà en place (`MainStatusCard`, `ActiveHoursInfoCard`,
+`FoxAnalysisCard`, `DeviceCard`, `TvDashboardCard` — aucune supprimée,
+toutes conservées telles quelles plus bas dans le scroll). Piloté par
+`BackgroundServiceSettings.enabledState` (même source de vérité que
+Réglages, pas un nouvel état parallèle) : grande illustration + halo/texte
+bleu ("Surveillance active") ou orange ("Surveillance inactive"), bouton
+"Activer/Désactiver la surveillance" (même logique de permission
+POST_NOTIFICATIONS que `SettingsScreen`, dupliquée volontairement plutôt
+que factorisée pour ne prendre aucun risque de régression sur l'écran
+Réglages déjà fonctionnel), et deux puces discrètes "Montre connectée" /
+"TV connectée". Illustrations réutilisées telles quelles depuis le module
+montre (`fox_watching_hero`/`fox_sleeping_hero`, copiées dans
+`app/src/main/res/drawable/` — les modules Android ne partagent pas leurs
+ressources) : même mascotte que la montre et le Character Bible
+(`docs/FOX_CHARACTER_BIBLE.md`), pas un nouveau design. Orange réutilisé
+de la palette déjà existante (`Color(0xFFFFA000)`, déjà utilisé partout
+ailleurs pour les états "attention/inactif") plutôt qu'inventé. **Statut :
+compilé et vérifié par build complet, rendu visuel non vérifié en
+conditions réelles** (aucun émulateur/appareil connecté dans cet
+environnement) — à confirmer en lançant l'app.
+
+Révisé le même jour (2026-08-14), toujours à la demande de l'utilisateur :
+- **Épuration** : seulement 3 infos sous le héro (montre, TV, plage
+  horaire) — `MainStatusCard`/`FoxAnalysisCard` retirés de cet écran
+  (restent définis dans `DashboardComponents.kt`, réutilisables ailleurs).
+- **Image en fond plein cadre, tout sur une seule page** : `FoxHomeHero`
+  occupe désormais toute la zone de contenu de l'onglet (`Box` plein
+  écran, plus de `verticalScroll` ni de cartes séparées empilées en
+  dessous) — l'illustration remplit tout le fond, texte/bouton/infos
+  superposés par-dessus avec un dégradé sombre pour rester lisibles,
+  panneau "verre" compact pour les 3 infos plutôt que des cartes pleines.
+  Fonctionnalité vérifiée non perdue au passage : le bouton "Reconnecter"
+  la montre (auparavant sur `DeviceCard`, seul point d'entrée pour ce
+  geste, absent de `HealthScreen.kt`) déplacé sur la ligne montre du
+  panneau compact, cliquable uniquement si déconnectée.
+
+  ✅✅ **Première vérification visuelle réelle de la session (2026-08-14)** :
+  AVD Pixel 8 créé et piloté par ligne de commande (`emulator.exe` +
+  `adb`, SDK/plateforme déjà installés via Android Studio) — installation
+  de l'app, captures d'écran, taps simulés, lecture directe des images.
+  Les deux états (actif/inactif, illustrations, couleurs, panneau compact)
+  confirmés visuellement conformes à la demande.
+
+  🐛→✅ **Vrai crash trouvé et corrigé au passage** : `Context
+  .startForegroundService()` engage Android à ce que le service appelle
+  `Service.startForeground()` sous quelques secondes.
+  `FoxForegroundService.prerequisitesMet()` vérifie déjà `BLUETOOTH_CONNECT`
+  en plus de la visibilité de la notification, mais si cette permission
+  manquait au moment de l'appel, le service s'arrêtait via `failAndStop()`
+  SANS jamais avoir appelé `startForeground()` — Android tue alors TOUTE
+  l'application (`ForegroundServiceDidNotStartInTimeException`), pas
+  seulement ce service. Reproduit en direct sur l'émulateur (permission
+  révoquée). Touchait aussi bien `FoxHomeHero` que
+  `SettingsScreen.enableBackgroundSurveillance()`, qui avait exactement la
+  même faille depuis le début — corrigé aux deux endroits : vérification
+  de `BLUETOOTH_CONNECT` (avec re-demande si besoin, même mécanisme que
+  `POST_NOTIFICATIONS`) AVANT tout appel à `startForegroundService()`,
+  jamais après. **Statut : corrigé et reproduit/re-vérifié sur émulateur
+  réel avec le correctif (permission révoquée -> demande propre, plus de
+  crash) — le seul correctif de toute la session validé sur un appareil
+  réel plutôt que par simple compilation.**
+
+  🔁 **Re-refonte le même jour (2026-08-14)**, sur une nouvelle maquette de
+  référence fournie par l'utilisateur, différente de la précédente et avec
+  consigne explicite de la reproduire fidèlement — remplace le panneau "3
+  infos" (montre/TV/plage horaire) ci-dessus, qui ne correspondait plus à
+  la demande. `FoxHomeHero` simplifié en `(surveillanceActive, modifier)` :
+  header centré "Fox⏻FF" (icône power à la place du "O") + tagline,
+  illustration contenue (coins arrondis, plus de plein-cadre), statut et
+  description sous l'image (plus par-dessus), bouton rond avec halo coloré
+  (`Modifier.shadow` teinté plutôt que `blur`, pour rester compatible sans
+  gestion spécifique API 31+) et légende séparée en dessous. Deux écarts
+  délibérés signalés à l'utilisateur : navigation à 5 onglets conservée
+  (la maquette en montre 4) et bouton "Reconnecter la montre" retiré (plus
+  de panneau infos pour l'accueillir).
+
+  ✅✅ **Vérifié sur l'émulateur Pixel 8** : build vert
+  (`BUILD SUCCESSFUL`), app installée et relancée, capture d'écran de
+  l'état "Surveillance active" conforme à la maquette (halo bleu, renard
+  éveillé, bouton bleu). Bascule testée par tap réel sur le bouton (bornes
+  cliquables lues via `uiautomator dump` pour viser juste — le bouton rond
+  de 76dp est une cible bien plus petite que l'ancienne barre pleine
+  largeur) : état "Surveillance inactive" confirmé (halo orange, renard
+  endormi, bouton orange, texte "Appuyez pour activer"). Les deux états
+  dynamiques et le changement immédiat au tap sont donc vérifiés en
+  conditions réelles, pas seulement compilés.
+
+  🎨 **Refonte du tout premier écran (2026-08-14)** : `WelcomeScreen`
+  (`ui/onboarding/screens/OnboardingScreens.kt`), premier écran affiché à
+  l'installation, entièrement revu à la demande de l'utilisateur avec
+  plusieurs allers-retours d'assets/ajustements :
+  - **Fond** : `bg_welcome_night.jpg` (ciel étoilé + forêt, fourni par
+    l'utilisateur) en plein cadre, léger voile noir pour la lisibilité.
+  - **Illustration** : `fox_on_moon_blended.png`, dérivée d'une image
+    fournie (renard endormi sur un croissant de lune) par un script
+    (`System.Drawing` en PowerShell, pas d'outil d'édition d'image
+    disponible ici) qui recadre l'image au plus près du sujet (511×700,
+    deux passes de recadrage) et applique un dégradé alpha elliptique
+    (opaque au centre → transparent sur les bords) pour qu'elle se fonde
+    dans le fond plutôt que d'apparaître comme un rectangle collé dessus.
+  - **Wordmark "Fox⏻FF"** (`FoxComponents.kt`, composant `FoxWordmark`
+    réutilisable) : police "Outfit" (Google Fonts, licence SIL OFL,
+    `res/font/outfit_variable.ttf` + `docs/licenses/OUTFIT_FONT_OFL.txt`)
+    chargée via `FontVariation.weight(...)` — "Fox" en graisse Black
+    (900), "FF" en Bold (700), toutes deux blanches (le "FF" était
+    auparavant en bleu, changement explicite). Symbole power dessiné à la
+    main via `Canvas` (arc + trait, `PowerGlyph`) plutôt que l'icône
+    Material `PowerSettingsNew` — dont l'épaisseur de trait fixe ne
+    pouvait pas être ajustée — avec dégradé métallique clair→sombre et
+    ombre portée décalée pour un rendu "en relief".
+  - **Message** : reformulé pour mettre le sommeil en sujet principal
+    plutôt que la télévision : "FoxOFF veille sur votre sommeil grâce à
+    votre montre connectée, et met en pause ce que vous regardez dès que
+    vous vous endormez."
+  - **Écran "splash" supprimé** du flux de navigation
+    (`OnboardingNavigation.kt` : `startDestination` passe de `"splash"` à
+    `"welcome"`) — l'ancienne animation "FOXOFF" avec pause noire avant
+    n'apparaît plus, `WelcomeScreen` est désormais le tout premier écran.
+  - **Flash blanc au démarrage froid corrigé** : `android:windowBackground`
+    (hérité de `Theme.Material.Light`, blanc par défaut) aligné sur la
+    couleur exacte du fond nocturne (`#000519`) dans
+    `res/values/themes.xml`, plus un override `res/values-v31/themes.xml`
+    pour le splash screen système d'Android 12+ (`windowSplashScreenBackground`
+    + `windowSplashScreenAnimatedIcon`) — ce splash système est imposé par
+    l'OS au démarrage froid et ne peut pas être supprimé, seulement
+    thématisé pour ne plus jurer avec le reste de l'app.
+
+  ✅✅ **Chaque itération vérifiée sur l'émulateur Pixel 8** (reset du
+  flag onboarding via `adb shell run-as ... rm shared_prefs`, réinstall,
+  capture d'écran, lecture directe des images) — pas seulement compilé.
 
 **Sortie (spécifique)** : un utilisateur peut consulter ses 7 dernières nuits et ajuster la sensibilité sans redémarrer l'app.
 
@@ -821,6 +1215,60 @@ Phase 8 soit terminée.
   questionnaire de classification de contenu et le formulaire Data Safety
   (voir aide-mémoire ci-dessus), créer le track Test interne, y uploader
   `app-release.aab`, inviter les testeurs par email.
+- ✅ **Fait (2026-08-12)** : durcissement de la protection des données
+  locales, demande explicite de l'utilisateur ("j'aimerai que les données
+  des utilisateurs soit extrêmement protégé"). Deux correctifs :
+  1. **Sauvegarde automatique désactivée** (`android:allowBackup="false"`) —
+     activée sans aucune règle d'exclusion, elle sauvegardait TOUTES les
+     données de l'app (BPM, sommeil, historique) vers Android Auto Backup,
+     donc vers le Google Drive de l'utilisateur : une contradiction directe
+     avec PRIVACY.md ("aucune donnée ne quitte votre appareil"), repérée en
+     creusant le sujet. Fichiers `data_extraction_rules.xml`/
+     `backup_rules.xml` devenus inutiles, supprimés.
+  2. **Chiffrement au repos de toutes les SharedPreferences** — nouveau
+     `FoxEncryptedPrefs` (Jetpack Security `EncryptedSharedPreferences`,
+     clé maître dans l'Android Keystore matériel, jamais exportable) ;
+     remplace `context.getSharedPreferences()` dans les 11 fichiers qui
+     l'utilisaient, y compris **la clé privée TLS d'identité TV**
+     (`TvKeyStore`/`TvIdentity` — la donnée la plus sensible de l'app,
+     jusque-là stockée en clair). Choix délibéré de tout chiffrer
+     uniformément plutôt que de maintenir une liste "sensible/pas
+     sensible" (source d'oubli future). Point d'injection de test ajouté
+     (`FoxEncryptedPrefs.setTestFactory()`) car l'Android Keystore réel
+     n'existe pas dans les tests JVM — `BackgroundServiceSettingsTest`,
+     `SleepDetectionHistoryTest`, `FoxTvSettingsTest` adaptés en
+     conséquence (mockaient auparavant `Context.getSharedPreferences()`
+     directement). PRIVACY.md mis à jour avec une nouvelle section
+     "Chiffrement des données stockées". **Statut : compilé et vérifié par
+     build complet (169 tests verts), non vérifié sur matériel réel** — la
+     génération de clé Keystore n'est possible qu'avec un vrai
+     KeyStore Android (émulateur/appareil), absent de cet environnement.
+- 🐛 **Régression + correctif (2026-08-12, même jour)** : blocage de 3-4
+  minutes au premier lancement après réinstallation, remonté par
+  l'utilisateur ("initialisation Fox Brain" bloquée). Cause trouvée : la
+  génération de la clé maître Android Keystore (première utilisation de
+  `FoxEncryptedPrefs`, opération cryptographique réelle, pas instantanée)
+  se produisait de façon SYNCHRONE sur le thread principal — notamment
+  `OnboardingSettings.isCompleted()`, lue directement dans le `remember{}`
+  de la toute première composition de `MainActivity`, et
+  `BackgroundServiceSettings.isEnabled()` / `FoxCore.initialize()` /
+  `FoxServiceReconciliation.reconcileNow()` appelés sur le dispatcher
+  `Main` depuis `FoxApplication`. Corrigé : (1) `OnboardingSettings`
+  repassé en SharedPreferences en clair délibérément — un simple booléen
+  "onboarding terminé", jamais sensible, lu de façon synchrone avant même
+  que le cache chiffré ait pu s'amorcer, ne justifiait pas ce coût ; (2)
+  `appScope` de `FoxApplication` passé de `Dispatchers.Main` à
+  `Dispatchers.IO` ; (3) `FoxServiceReconciliation.reconcileNow()`
+  dispatche maintenant son corps sur un scope IO interne plutôt que de
+  bloquer l'appelant (appelé depuis un callback de cycle de vie sur Main) ;
+  (4) amorçage (`warm-up`) de tous les fichiers `FoxEncryptedPrefs` connus
+  en arrière-plan dès `FoxApplication.onCreate()`, pour que les écrans
+  suivants (Réglages, détection montre...) qui les lisent encore de façon
+  synchrone bénéficient d'un cache déjà prêt. Les données réellement
+  sensibles (BPM, sommeil, clé TLS TV) restent chiffrées — seul le flag
+  onboarding en est sorti. **Statut : compilé et vérifié par build
+  complet, correctif non revérifié sur le device où le blocage a été
+  observé** — à confirmer.
 - Vérifier/compléter les règles ProGuard/R8 (`rules.keep` existe déjà — à valider avec un build `release` réel).
 - Monitoring crash en production (Crashlytics ou équivalent).
 - Tests sur la TV principale ciblée + versions Wear OS (5/6) supportées.

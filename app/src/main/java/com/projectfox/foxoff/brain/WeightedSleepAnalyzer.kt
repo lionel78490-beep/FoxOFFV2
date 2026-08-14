@@ -21,10 +21,20 @@ class WeightedSleepAnalyzer(
                 // premier échantillon de la session), on s'appuie sur
                 // restingBpmBaseline (moyenne générique au repos) plutôt que
                 // de désactiver la règle entièrement — voir FoxBrainState.
-                // Dès qu'un minBpmToday réel apparaît, il prend le dessus :
-                // la calibration devient alors propre à l'utilisateur.
+                // Dès qu'un minBpmToday réel apparaît, il ne peut plus que
+                // RESSERRER le seuil (jamais l'élargir) par rapport au repos
+                // calibré (Health Connect) : minBpmToday se fige dès la
+                // toute première lecture de la soirée, souvent encore
+                // au-dessus du vrai BPM de sommeil, et ne peut ensuite que
+                // baisser — sans ce plancher, un minBpmToday élevé rendait
+                // le seuil plus permissif que le repos réel de l'utilisateur.
+                // Faux positif corrigé le 2026-08-13 (voir
+                // SleepScoringConfig.bpmDropThreshold) : minBpmToday figé à
+                // 71 bpm dès la première lecture, seuil 79,5 -> un BPM de 79
+                // (bien au-dessus des 45-52 de sommeil réel) déclenchait
+                // quand même le bonus.
                 val baseline = if (currentState.minBpmToday > 0) {
-                    currentState.minBpmToday.toFloat()
+                    minOf(currentState.minBpmToday.toFloat(), currentState.restingBpmBaseline.toFloat())
                 } else {
                     currentState.restingBpmBaseline.toFloat()
                 }

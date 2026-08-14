@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <!-- Android 12+ affiche automatiquement un splash screen système au
+         démarrage froid (icône + fond uni), impossible à supprimer
+         entièrement — mais personnalisable. Sans ces attributs, il retombe
+         sur android:windowBackground (déjà fixé sur la couleur du fond
+         nocturne dans values/themes.xml) et l'icône de lancement par
+         défaut ; ici on la rend explicite pour rester cohérent si l'icône
+         de lancement change un jour. -->
+    <style name="Theme.FoxOFFV2" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">#000519</item>
+        <item name="android:windowSplashScreenBackground">#000519</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_launcher_foreground</item>
+    </style>
+</resources>

@@ -1,9 +1,11 @@
 package com.projectfox.foxoff.core.application
 
 import android.content.Context
+import com.projectfox.foxoff.core.security.FoxEncryptedPrefs
 import com.projectfox.foxoff.tv.FakeSharedPreferences
 import io.mockk.every
 import io.mockk.mockk
+import org.junit.After
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -19,7 +21,14 @@ class BackgroundServiceSettingsTest {
         fakePrefs = FakeSharedPreferences()
         context = mockk(relaxed = true)
         every { context.applicationContext } returns context
-        every { context.getSharedPreferences(any(), any()) } returns fakePrefs
+        // Le chiffrement réel (FoxEncryptedPrefs) exige l'Android Keystore,
+        // absent des tests JVM — voir sa KDoc pour ce point d'injection.
+        FoxEncryptedPrefs.setTestFactory { _, _ -> fakePrefs }
+    }
+
+    @After
+    fun tearDown() {
+        FoxEncryptedPrefs.resetForTests()
     }
 
     @Test

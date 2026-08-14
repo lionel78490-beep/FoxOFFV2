@@ -37,7 +37,7 @@ object FoxTvSettings {
     private const val KEY_MANUAL_IP_OVERRIDE = "manual_ip_override"
 
     private fun prefs(context: Context): SharedPreferences =
-        context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        com.projectfox.foxoff.core.security.FoxEncryptedPrefs.get(context, PREFS_NAME)
 
     private fun fieldName(id: String, field: String) = "tv_${id}_$field"
 

@@ -18,6 +18,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.projectfox.foxoff.tv.TvConnectionStatus
 import com.projectfox.foxoff.ui.dashboard.components.*
 import com.projectfox.foxoff.ui.onboarding.components.FoxGradientBackground
 
@@ -52,18 +53,36 @@ fun DashboardScreen() {
         com.projectfox.foxoff.core.application.ActiveHoursSettings.getSelectedSlots(context)
     }
 
+    // Intention persistée de surveillance en arrière-plan (tâche #13/#15) —
+    // même miroir réactif que celui déjà utilisé par SettingsScreen
+    // (BackgroundServiceSettings.enabledState) : le nouveau bouton de
+    // l'Accueil (2026-08-14, voir FoxHomeHero) reflète et pilote exactement
+    // le même état, pas un nouveau réglage parallèle.
+    val surveillanceActive by com.projectfox.foxoff.core.application.BackgroundServiceSettings.enabledState.collectAsState()
+    LaunchedEffect(Unit) {
+        com.projectfox.foxoff.core.application.BackgroundServiceSettings.isEnabled(context)
+    }
+
     FoxGradientBackground {
         Scaffold(
             containerColor = Color.Transparent,
             topBar = {
-                Column(modifier = Modifier.padding(horizontal = 24.dp, vertical = 24.dp)) {
-                    Text(
-                        text = "FOXOFF",
-                        style = MaterialTheme.typography.titleLarge,
-                        color = Color.White,
-                        fontWeight = FontWeight.Black,
-                        letterSpacing = 4.sp
-                    )
+                // L'onglet Accueil (0) affiche désormais son propre header
+                // centré "Fox⏻FF" + tagline, à l'intérieur de FoxHomeHero
+                // (2026-08-14, calqué sur une maquette de référence) —
+                // afficher aussi ce bandeau ici dupliquerait le nom de
+                // l'app en haut de l'écran. Inchangé pour tous les autres
+                // onglets.
+                if (selectedTab != 0) {
+                    Column(modifier = Modifier.padding(horizontal = 24.dp, vertical = 24.dp)) {
+                        Text(
+                            text = "FOXOFF",
+                            style = MaterialTheme.typography.titleLarge,
+                            color = Color.White,
+                            fontWeight = FontWeight.Black,
+                            letterSpacing = 4.sp
+                        )
+                    }
                 }
             },
             bottomBar = {
@@ -141,50 +160,20 @@ fun DashboardScreen() {
             }
         ) { padding ->
             if (selectedTab == 0) {
-                Column(
+                // Demande explicite du 2026-08-14 (calquée sur une maquette
+                // de référence) : header centré + illustration contenue +
+                // statut + bouton rond, sans info montre/TV/plage horaire —
+                // FoxHomeHero occupe toute la zone de contenu (plus de
+                // verticalScroll : MainStatusCard/FoxAnalysisCard/
+                // ActiveHoursInfoCard/DeviceCard/TvDashboardCard restent
+                // définies dans DashboardComponents.kt, réutilisables
+                // ailleurs, mais ne sont plus affichées ici).
+                Box(
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(padding)
-                        .padding(horizontal = 24.dp)
-                        .verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    MainStatusCard(
-                        status = uiState.mainStatus,
-                        color = uiState.mainStatusColor
-                    )
-
-                    ActiveHoursInfoCard(
-                        selectedSlots = selectedActiveHoursSlots,
-                        onClick = { selectedTab = 3 }
-                    )
-
-                    FoxAnalysisCard(
-                        state = uiState.sleepState,
-                        confidence = uiState.confidence,
-                        explanation = uiState.analysisExplanation
-                    )
-
-                    DeviceCard(
-                        icon = "⌚",
-                        name = uiState.watchName,
-                        isConnected = uiState.watchConnected,
-                        isKnown = uiState.watchKnown,
-                        battery = uiState.watchBattery,
-                        type = uiState.watchConnectionType,
-                        statusOverride = uiState.watchStatusOverride,
-                        onAssociateClick = { viewModel.onAssociateClick(context) }
-                    )
-                    
-                    TvDashboardCard(
-                        name = uiState.tvName,
-                        status = uiState.tvStatus,
-                        currentApp = uiState.tvCurrentApp,
-                        lastCommand = uiState.tvLastCommand,
-                        lastCommandTime = uiState.tvLastCommandTime
-                    )
-
-                    Spacer(modifier = Modifier.height(32.dp))
+                    FoxHomeHero(surveillanceActive = surveillanceActive)
                 }
             } else if (selectedTab == 1) {
                 Box(modifier = Modifier.fillMaxSize().padding(padding)) {

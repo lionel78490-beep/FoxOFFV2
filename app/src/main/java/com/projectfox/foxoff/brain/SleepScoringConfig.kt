@@ -28,7 +28,23 @@ data class SleepScoringConfig(
     val tvOnBonus: Float = 0.03f,        // +3%
     val lateNightBonus: Float = 0.05f,   // +5%
     val userInteractionPenalty: Float = 0.20f, // -20%
-    val significantMovementPenalty: Float = 0.15f, // -15%
+    /**
+     * Abaissée de 15% à 8% le 2026-08-12, après une nuit de test où
+     * l'endormissement réel (confirmé par Samsung Health à 5 min près, et
+     * ressenti par l'utilisateur) a eu lieu vers 23h25-23h30, mais FoxOFF
+     * ne l'a confirmé qu'à 00h45 — 1h15 de retard. Cause identifiée dans le
+     * journal Historique : le BPM était déjà bas et stable dès 23h24 (le
+     * signal utile pour la détection), mais deux mouvements "importants"
+     * (>movementThreshold) ont fait retomber le score à AWAKE, forçant à
+     * reconstituer plusieurs cycles de `bpmDropBonus` avant de retrouver le
+     * terrain perdu — un mouvement normal en s'endormant (se retourner,
+     * ajuster l'oreiller) coûtait quasiment autant qu'un cycle entier de
+     * bonus (15% de pénalité contre 18% de bonus toutes les 3 min),
+     * neutralisant presque tout le gain d'un `sustainedBpmDropDuration`.
+     * 8% reste un vrai signal (un mouvement franc pénalise toujours) sans
+     * effacer la quasi-totalité du dernier cycle de bonus à lui seul.
+     */
+    val significantMovementPenalty: Float = 0.08f, // -8%
 
     // Thresholds
     /**
@@ -43,10 +59,14 @@ data class SleepScoringConfig(
      * à repasser au-dessus du seuil et remettait `bpmBelowBaselineSince` à
      * zéro avant que 5 minutes continues ne soient jamais atteintes. 12%
      * (≈6 bpm sur cette même base) absorbe cette variabilité normale.
-     * Palliatif : le vrai problème de fond — une référence qui rétrécit sans
-     * cesse plutôt qu'une référence stable — sera traité en utilisant
-     * restingBpmBaseline calibré (Health Connect) comme référence une fois
-     * ce calibrage fiable (voir ROADMAP.md).
+     * Le problème de fond — minBpmToday qui se fige dès la première lecture
+     * de la soirée, parfois encore élevée, et ne fait ensuite que baisser
+     * sans jamais remonter — a causé un faux positif réel le 2026-08-12
+     * (minBpmToday figé à 71, seuil 79,5, a laissé passer un BPM de 79 très
+     * loin du sommeil réel de l'utilisateur (45-52 bpm)). Corrigé le
+     * 2026-08-13 (voir WeightedSleepAnalyzer/FoxBrain) : minBpmToday ne peut
+     * plus que RESSERRER le seuil par rapport à restingBpmBaseline calibré
+     * (Health Connect), jamais l'élargir.
      */
     val bpmDropThreshold: Float = 0.12f,
 

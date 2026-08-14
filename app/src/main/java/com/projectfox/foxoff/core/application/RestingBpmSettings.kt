@@ -21,8 +21,7 @@ object RestingBpmSettings {
     val calibratedBpm: StateFlow<Int?> = _calibratedBpm.asStateFlow()
 
     fun saveCalibratedBpm(context: Context, bpm: Int) {
-        context.applicationContext
-            .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        com.projectfox.foxoff.core.security.FoxEncryptedPrefs.get(context, PREFS_NAME)
             .edit()
             .putInt(KEY_CALIBRATED_BPM, bpm)
             .apply()
@@ -31,7 +30,7 @@ object RestingBpmSettings {
 
     /** À appeler au démarrage pour synchroniser le miroir réactif. */
     fun getCalibratedBpm(context: Context): Int? {
-        val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val prefs = com.projectfox.foxoff.core.security.FoxEncryptedPrefs.get(context, PREFS_NAME)
         val value = if (prefs.contains(KEY_CALIBRATED_BPM)) prefs.getInt(KEY_CALIBRATED_BPM, 0) else null
         _calibratedBpm.value = value
         return value

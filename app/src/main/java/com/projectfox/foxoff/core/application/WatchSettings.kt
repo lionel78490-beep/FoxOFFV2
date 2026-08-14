@@ -19,16 +19,14 @@ object WatchSettings {
 
     fun saveLastKnownWatch(context: Context, name: String) {
         if (name.isBlank()) return
-        context.applicationContext
-            .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        com.projectfox.foxoff.core.security.FoxEncryptedPrefs.get(context, PREFS_NAME)
             .edit()
             .putString(KEY_LAST_KNOWN_NAME, name)
             .apply()
     }
 
     fun getLastKnownWatchName(context: Context): String? {
-        return context.applicationContext
-            .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        return com.projectfox.foxoff.core.security.FoxEncryptedPrefs.get(context, PREFS_NAME)
             .getString(KEY_LAST_KNOWN_NAME, null)
             ?.takeIf { it.isNotBlank() }
     }
@@ -41,23 +39,20 @@ object WatchSettings {
      */
     fun saveLastKnownNodeId(context: Context, nodeId: String) {
         if (nodeId.isBlank()) return
-        context.applicationContext
-            .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        com.projectfox.foxoff.core.security.FoxEncryptedPrefs.get(context, PREFS_NAME)
             .edit()
             .putString(KEY_LAST_KNOWN_NODE_ID, nodeId)
             .apply()
     }
 
     fun getLastKnownNodeId(context: Context): String? {
-        return context.applicationContext
-            .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        return com.projectfox.foxoff.core.security.FoxEncryptedPrefs.get(context, PREFS_NAME)
             .getString(KEY_LAST_KNOWN_NODE_ID, null)
             ?.takeIf { it.isNotBlank() }
     }
 
     fun saveWatchBrand(context: Context, brand: WatchBrand) {
-        context.applicationContext
-            .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        com.projectfox.foxoff.core.security.FoxEncryptedPrefs.get(context, PREFS_NAME)
             .edit()
             .putString(KEY_WATCH_BRAND, brand.name)
             .apply()
@@ -65,8 +60,7 @@ object WatchSettings {
 
     /** WEAR_OS par défaut : préserve le comportement des installations existantes. */
     fun getWatchBrand(context: Context): WatchBrand {
-        val raw = context.applicationContext
-            .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val raw = com.projectfox.foxoff.core.security.FoxEncryptedPrefs.get(context, PREFS_NAME)
             .getString(KEY_WATCH_BRAND, null)
         return raw?.let { runCatching { WatchBrand.valueOf(it) }.getOrNull() } ?: WatchBrand.WEAR_OS
     }
@@ -78,8 +72,7 @@ object WatchSettings {
      * de l'ancienne montre pendant qu'on en appaire une nouvelle.
      */
     fun clearKnownDevice(context: Context) {
-        context.applicationContext
-            .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        com.projectfox.foxoff.core.security.FoxEncryptedPrefs.get(context, PREFS_NAME)
             .edit()
             .remove(KEY_LAST_KNOWN_NAME)
             .remove(KEY_LAST_KNOWN_NODE_ID)

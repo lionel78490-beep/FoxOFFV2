@@ -26,12 +26,20 @@
          repos" en général (voir computeRestingBaseline()). -->
     <uses-permission android:name="android.permission.health.READ_SLEEP" />
 
+    <!--
+        allowBackup="false" volontaire (2026-08-12) : à "true" sans règle
+        d'exclusion, l'app sauvegardait TOUTES ses données (fréquence
+        cardiaque, sommeil, historique) vers Android Auto Backup — donc
+        vers le Google Drive de l'utilisateur — ce qui contredisait
+        littéralement PRIVACY.md ("aucune donnée ne quitte votre
+        appareil"). Désinstaller/réinstaller repart d'une app vide, cohérent
+        avec le reste de la politique de confidentialité (désinstaller
+        supprime déjà tout).
+    -->
     <application
 
         android:name="com.projectfox.foxoff.core.application.FoxApplication"
-        android:allowBackup="true"
-        android:dataExtractionRules="@xml/data_extraction_rules"
-        android:fullBackupContent="@xml/backup_rules"
+        android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
@@ -86,6 +94,22 @@
             android:name="com.projectfox.foxoff.core.service.FoxForegroundService"
             android:exported="false"
             android:foregroundServiceType="connectedDevice" />
+
+        <!--
+            Accès spécial "Accès aux notifications" — seul moyen sur Android
+            d'appeler MediaSessionManager.getActiveSessions() pour détecter
+            et mettre en pause la lecture média active du téléphone
+            (vidéo/musique), voir PhoneMediaPauseController. Aucune logique
+            de lecture/traitement des notifications elles-mêmes.
+        -->
+        <service
+            android:name="com.projectfox.foxoff.core.media.FoxNotificationListenerService"
+            android:exported="true"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
 
         <!--
             BOOT_COMPLETED est un broadcast système protégé (seul le système

@@ -86,7 +86,8 @@ fun RemoteScreen() {
                         tvEngine?.useDevice(id)
                         currentView = TvScreenView.Detail(id)
                     },
-                    onRefreshActive = { tvEngine?.refreshActiveDevice() }
+                    onRefreshActive = { tvEngine?.refreshActiveDevice() },
+                    onDeleteDevice = { id -> tvEngine?.removeDevice(id) }
                 )
 
                 TvScreenView.AddDevice -> TvAddDeviceView(
@@ -154,7 +155,8 @@ private fun TvListView(
     activeDeviceId: String?,
     onAddDevice: () -> Unit,
     onUseDevice: (String) -> Unit,
-    onRefreshActive: () -> Unit
+    onRefreshActive: () -> Unit,
+    onDeleteDevice: (String) -> Unit
 ) {
     Column(
         modifier = Modifier.fillMaxSize(),
@@ -200,7 +202,8 @@ private fun TvListView(
                         device = device,
                         isActive = isActive,
                         onUse = { onUseDevice(device.id) },
-                        onRefresh = onRefreshActive
+                        onRefresh = onRefreshActive,
+                        onDelete = { onDeleteDevice(device.id) }
                     )
                 }
             }
@@ -213,9 +216,28 @@ private fun TvPairedCard(
     device: TvDevice,
     isActive: Boolean,
     onUse: () -> Unit,
-    onRefresh: () -> Unit
+    onRefresh: () -> Unit,
+    onDelete: () -> Unit
 ) {
     val (statusLabel, statusColor) = tvStatusLabelAndColor(device.status, isActive)
+    var showDeleteConfirm by remember { mutableStateOf(false) }
+
+    if (showDeleteConfirm) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirm = false },
+            title = { Text("Supprimer « ${device.name} » ?") },
+            text = { Text("FoxOFF oubliera cette TV. Vous pourrez la réassocier plus tard en la recherchant à nouveau.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showDeleteConfirm = false
+                    onDelete()
+                }) { Text("Supprimer", color = Color(0xFFFF5252)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirm = false }) { Text("Annuler") }
+            }
+        )
+    }
 
     Box(
         modifier = Modifier
@@ -242,6 +264,18 @@ private fun TvPairedCard(
                             fontWeight = FontWeight.Bold
                         )
                     }
+                }
+                Spacer(modifier = Modifier.weight(1f))
+                IconButton(
+                    onClick = { showDeleteConfirm = true },
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    Icon(
+                        Icons.Default.Delete,
+                        contentDescription = "Supprimer « ${device.name} »",
+                        tint = Color.Gray,
+                        modifier = Modifier.size(18.dp)
+                    )
                 }
             }
             Text(text = device.address, color = Color.Gray, style = MaterialTheme.typography.bodySmall)

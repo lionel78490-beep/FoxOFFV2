@@ -55,12 +55,13 @@ class FoxBrain(
                     val bpm = event.bpm.toInt()
 
                     // Même calcul de seuil que WeightedSleepAnalyzer (même
-                    // config partagée) : suit depuis quand le BPM est
+                    // config partagée, voir sa documentation pour le détail
+                    // du plancher minOf) : suit depuis quand le BPM est
                     // continûment sous le seuil, et si le bonus a déjà été
                     // accordé pour cet épisode — voir SleepScoringConfig
                     // .sustainedBpmDropDuration.
                     val baseline = if (baseState.minBpmToday > 0) {
-                        baseState.minBpmToday.toFloat()
+                        minOf(baseState.minBpmToday.toFloat(), baseState.restingBpmBaseline.toFloat())
                     } else {
                         baseState.restingBpmBaseline.toFloat()
                     }

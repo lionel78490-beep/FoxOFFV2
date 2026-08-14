@@ -2,6 +2,7 @@ package com.projectfox.foxoff.core.automation
 
 import android.content.Context
 import android.util.Log
+import com.projectfox.foxoff.core.security.FoxEncryptedPrefs
 import com.projectfox.foxoff.tv.FakeSharedPreferences
 import io.mockk.every
 import io.mockk.mockk
@@ -24,7 +25,9 @@ class SleepDetectionHistoryTest {
         fakePrefs = FakeSharedPreferences()
         context = mockk(relaxed = true)
         every { context.applicationContext } returns context
-        every { context.getSharedPreferences(any(), any()) } returns fakePrefs
+        // Le chiffrement réel (FoxEncryptedPrefs) exige l'Android Keystore,
+        // absent des tests JVM — voir sa KDoc pour ce point d'injection.
+        FoxEncryptedPrefs.setTestFactory { _, _ -> fakePrefs }
 
         // record() journalise via FoxLogger -> android.util.Log, indisponible en test JVM pur.
         mockkStatic(Log::class)
@@ -35,6 +38,7 @@ class SleepDetectionHistoryTest {
     @After
     fun tearDown() {
         unmockkStatic(Log::class)
+        FoxEncryptedPrefs.resetForTests()
     }
 
     private fun record(secondsFromEpoch: Long, outcome: SleepDetectionOutcome) = SleepDetectionRecord(
