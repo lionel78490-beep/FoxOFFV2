@@ -11,7 +11,7 @@ import androidx.navigation.navArgument
 import com.projectfox.foxoff.ui.onboarding.screens.*
 
 @Composable
-fun OnboardingNavigation(onFinish: () -> Unit) {
+fun OnboardingNavigation(onFinish: () -> Unit, startRoute: String = "welcome") {
     val navController = rememberNavController()
 
     NavHost(
@@ -20,8 +20,10 @@ fun OnboardingNavigation(onFinish: () -> Unit) {
         // écran affiché au lancement — l'écran "splash" (animation
         // "FOXOFF" avec pause noire avant) a été retiré du flux, demande
         // explicite du 2026-08-14 ("2 écrans avant celui-ci, supprime
-        // les").
-        startDestination = "welcome"
+        // les"). startRoute permet de reprendre plus loin dans le flux
+        // après le redémarrage forcé par un changement de marque de
+        // montre (voir MainActivity.EXTRA_ONBOARDING_START_ROUTE).
+        startDestination = startRoute
     ) {
         composable(
             "welcome",
@@ -60,7 +62,15 @@ fun OnboardingNavigation(onFinish: () -> Unit) {
             enterTransition = { slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.Start, tween(700)) },
             exitTransition = { slideOutOfContainer(AnimatedContentTransitionScope.SlideDirection.Start, tween(700)) }
         ) {
-            WatchBrandScreen(onNext = { navController.navigate("watch_detection") })
+            WatchBrandScreen(onNext = { navController.navigate("watch_app_install") })
+        }
+
+        composable(
+            "watch_app_install",
+            enterTransition = { slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.Start, tween(700)) },
+            exitTransition = { slideOutOfContainer(AnimatedContentTransitionScope.SlideDirection.Start, tween(700)) }
+        ) {
+            WatchAppInstallScreen(onNext = { navController.navigate("watch_detection") })
         }
 
         composable(

@@ -558,16 +558,94 @@ fun WatchBrandScreen(onNext: () -> Unit) {
                     // seule fois par FoxCore.initialize() au démarrage du
                     // processus) ne peut être remplacé qu'en relançant l'app
                     // — même mécanisme que SettingsScreen "Changer de montre".
+                    // EXTRA_ONBOARDING_START_ROUTE fait reprendre directement
+                    // à l'écran d'installation plutôt qu'au tout début du
+                    // flux (bug signalé le 2026-08-14 : changer d'avis entre
+                    // Wear OS et Garmin renvoyait à la première page,
+                    // perdant permissions/plages horaires/pause média déjà
+                    // remplis).
                     com.projectfox.foxoff.core.application.WatchSettings.saveWatchBrand(context, selectedBrand)
                     com.projectfox.foxoff.core.application.WatchSettings.clearKnownDevice(context)
                     val intent = android.content.Intent(context, com.projectfox.foxoff.MainActivity::class.java).apply {
                         flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK
+                        putExtra(com.projectfox.foxoff.MainActivity.EXTRA_ONBOARDING_START_ROUTE, "watch_app_install")
                     }
                     context.startActivity(intent)
                 } else {
                     onNext()
                 }
             })
+        }
+    }
+}
+
+/**
+ * Étape insérée le 2026-08-14, entre WatchBrandScreen et
+ * WatchDetectionScreen — demande explicite de l'utilisateur : rien
+ * n'expliquait jusqu'ici que la montre a besoin de SA PROPRE application
+ * (module `wear/` pour Wear OS, module `garmin/` pour Connect IQ)
+ * installée séparément avant que la détection ait une chance de
+ * fonctionner. Purement informatif (pas de vérification d'installation
+ * possible depuis le téléphone), instructions adaptées à la marque
+ * choisie à l'étape précédente. Pas de bouton "ouvrir le store" : aucune
+ * fiche Play Store / Connect IQ Store publique confirmée à ce jour (voir
+ * ROADMAP.md Phase 9) — mieux vaut ne pas pointer vers un lien qui
+ * pourrait ne pas exister plutôt que d'inventer une URL.
+ */
+@Composable
+fun WatchAppInstallScreen(onNext: () -> Unit) {
+    val context = LocalContext.current
+    val watchBrand = remember {
+        com.projectfox.foxoff.core.application.WatchSettings.getWatchBrand(context)
+    }
+
+    FoxOnboardingBackground {
+        Column(modifier = Modifier.fillMaxSize().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            FoxProgressConnection(step = 6)
+            Spacer(modifier = Modifier.height(24.dp))
+            FoxTitle(text = "Installez FoxOFF sur votre montre")
+            Spacer(modifier = Modifier.height(16.dp))
+            FoxSubtitle(
+                text = "FoxOFF a besoin d'une application installée directement sur votre montre pour détecter votre endormissement."
+            )
+
+            Spacer(modifier = Modifier.height(32.dp))
+
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(24.dp))
+                    .background(Color.White.copy(alpha = 0.08f))
+                    .border(1.dp, Color.White.copy(alpha = 0.15f), RoundedCornerShape(24.dp))
+                    .padding(20.dp)
+            ) {
+                Column {
+                    Text(
+                        text = when (watchBrand) {
+                            com.projectfox.foxoff.core.watch.WatchBrand.WEAR_OS -> "Sur votre montre"
+                            com.projectfox.foxoff.core.watch.WatchBrand.GARMIN -> "Sur votre montre Garmin"
+                        },
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = when (watchBrand) {
+                            com.projectfox.foxoff.core.watch.WatchBrand.WEAR_OS ->
+                                "Ouvrez le Play Store sur votre montre (pas sur votre téléphone) et installez l'application \"FoxOFF\"."
+                            com.projectfox.foxoff.core.watch.WatchBrand.GARMIN ->
+                                "Ouvrez l'application Garmin Connect sur votre téléphone, ou le Connect IQ Store directement sur votre montre, et installez l'application \"FoxOFF\"."
+                        },
+                        color = Color.White.copy(alpha = 0.8f)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+            FoxSubtitle(text = "Revenez ici une fois l'installation terminée.")
+
+            Spacer(modifier = Modifier.weight(1f))
+            FoxButton(text = "Continuer", onClick = onNext)
         }
     }
 }
@@ -597,7 +675,7 @@ fun WatchDetectionScreen(onNext: () -> Unit) {
 
     FoxOnboardingBackground {
         Column(modifier = Modifier.fillMaxSize().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            FoxProgressConnection(step = 6)
+            FoxProgressConnection(step = 7)
             Spacer(modifier = Modifier.height(24.dp))
             FoxTitle(text = "Détection de votre montre")
             Spacer(modifier = Modifier.height(16.dp))
@@ -663,7 +741,7 @@ fun TvDetectionScreen(onNext: (String) -> Unit, onSkip: () -> Unit) {
                 .padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            FoxProgressConnection(step = 7)
+            FoxProgressConnection(step = 8)
             Spacer(modifier = Modifier.height(24.dp))
             FoxTitle(text = "Configuration TV")
             Spacer(modifier = Modifier.height(16.dp))
@@ -739,7 +817,7 @@ fun TvDetectionScreen(onNext: (String) -> Unit, onSkip: () -> Unit) {
 fun SetupCompleteScreen(onFinish: () -> Unit) {
     FoxOnboardingBackground {
         Column(modifier = Modifier.fillMaxSize().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-            FoxProgressConnection(step = 8)
+            FoxProgressConnection(step = 9)
             Spacer(modifier = Modifier.weight(1f))
             FoxAnimatedLogo()
             Spacer(modifier = Modifier.height(32.dp))
@@ -773,7 +851,7 @@ fun TvPairingScreen(deviceId: String?, onNext: () -> Unit) {
 
     FoxOnboardingBackground {
         Column(modifier = Modifier.fillMaxSize().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            FoxProgressConnection(step = 8)
+            FoxProgressConnection(step = 9)
             Spacer(modifier = Modifier.height(24.dp))
             FoxTitle(text = "Appairage de la télévision")
             Spacer(modifier = Modifier.height(16.dp))

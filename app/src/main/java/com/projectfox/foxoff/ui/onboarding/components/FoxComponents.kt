@@ -318,7 +318,7 @@ fun FoxSubtitle(text: String, modifier: Modifier = Modifier) {
 }
 
 @Composable
-fun FoxProgressConnection(step: Int, totalSteps: Int = 8) {
+fun FoxProgressConnection(step: Int, totalSteps: Int = 9) {
     val progress = step.toFloat() / totalSteps.toFloat()
     val animatedProgress by animateFloatAsState(targetValue = progress, label = "progress")
 
