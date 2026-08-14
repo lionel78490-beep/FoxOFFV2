@@ -83,4 +83,4 @@ pas disponible publiquement.
 ## Contact
 
 Pour toute question sur cette politique de confidentialité :
-lionel78490@gmail.com
+contact.foxoff@gmail.com
