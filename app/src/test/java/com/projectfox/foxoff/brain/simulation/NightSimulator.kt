@@ -48,7 +48,12 @@ data class NightSimulationResult(
  */
 class NightSimulator {
 
-    private companion object {
+    // `internal` (au lieu de `private`) depuis le 2026-08-16 : visibilité
+    // élargie UNIQUEMENT pour que NightDiagnostics puisse rejouer les
+    // mêmes nuits avec une capture minute par minute, sans dupliquer cette
+    // logique (risque de divergence) — aucun changement de COMPORTEMENT,
+    // `run()` est strictement inchangée.
+    internal companion object {
         const val NIGHT_MINUTES = 480
         const val ONSET_DURATION = 10f
         const val NIGHT_WAKING_DURATION = 15
@@ -181,7 +186,7 @@ class NightSimulator {
 
     // --- Génération du BPM/mouvement synthétiques ---
 
-    private fun bpmAt(profile: NightProfile, minute: Int, rng: Random): Float {
+    internal fun bpmAt(profile: NightProfile, minute: Int, rng: Random): Float {
         val noise = rng.nextInt(-profile.bpmNoise, profile.bpmNoise + 1).toFloat()
 
         if (profile.neverSleeps) {
@@ -226,7 +231,7 @@ class NightSimulator {
         }
     }
 
-    private fun movementAt(profile: NightProfile, minute: Int, rng: Random): Float? {
+    internal fun movementAt(profile: NightProfile, minute: Int, rng: Random): Float? {
         if (profile.nightWakingMinutes.contains(minute)) return SIGNIFICANT_MOVEMENT
         if (profile.isolatedMovementMinutes.contains(minute)) return ISOLATED_MOVEMENT_SPIKE
         if (profile.restlessButLowBpm && minute % 4 == 0) {

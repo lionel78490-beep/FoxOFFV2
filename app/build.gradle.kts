@@ -134,6 +134,12 @@ tasks.withType<Test>().configureEach {
             "**/OptimizeSleepScoringConfigTest.class",
             "**/OptimizeOnProfiledNightsTest.class",
             "**/OptimizeWideSearchTest.class",
+            "**/OptimizeFinalOptimizationTest.class",
+            "**/DiagnosticAnalysisTest.class",
+            "**/ControlledExperimentTest.class",
+            "**/ContinuityExperimentTest.class",
+            "**/ContextualDetectionTest.class",
+            "**/ActigraphyExperimentTest.class",
             "**/ProfiledNightGeneratorTest.class"
         )
     }

@@ -840,6 +840,78 @@ Phase 8 (voir "Décisions repoussées").
   de sur-ajustement au premier jeu), même si ses performances absolues
   sont naturellement moins bonnes sur ce jeu plus exigeant. Aucun
   changement supplémentaire appliqué.
+  **Recherche large + affinage local (2026-08-16)** : exploration élargie
+  (plages différentes, granularité à la seconde) + 2 tours d'affinage
+  local — a d'abord semblé trouver une amélioration (délai divisé par 2),
+  puis démasquée comme un mauvais compromis (détections manquées passées
+  de 11% à 35,6%, faux positifs échangés contre des manqués). Corrigée
+  avec une contrainte double (faux positifs ET manqués, aucun des deux ne
+  doit se dégrader) : **aucune configuration trouvée qui batte la
+  production sur les deux à la fois.**
+  **Analyse diagnostique (2026-08-16)** : sur les mêmes 125 000 nuits,
+  cause n°1 des détections manquées = **profil E** (84,7% des manqués,
+  endormissement difficile 120-300min) ; cause n°1 des retards extrêmes
+  (top 100, 417-470min) = **profil H** (95%, bruit BPM cassant la
+  continuité du seuil très strict issu de l'optimisation). E+H se
+  combine multiplicativement (82,6% de manqués, pire que E ou H seuls).
+  **Expérience contrôlée durée/seuil** : `sustainedBpmDropDuration` n'est
+  PAS un curseur réglable au-delà de 60s (falaise : manqués globaux
+  11%→48% dès 240s) ; `bpmDropThreshold` offre un vrai arbitrage continu
+  mais toujours au prix des faux positifs, favorable à D/H, jamais à E.
+  **Expérience continuité BPM** (moteur parallèle, 7 stratégies de
+  tolérance/décroissance aux interruptions) : améliore massivement H
+  (délai ÷5,6) mais dégrade systématiquement les faux positifs d'E — même
+  tension retrouvée sur un second levier indépendant.
+  **Expérience logique contextuelle** (moteur parallèle, 4 mécanismes
+  temporels A/B/C/E) : aucun n'améliore FP et manqués simultanément ; la
+  stratégie "seuil progressif" s'est révélée auto-neutralisante par
+  construction (se désactive juste avant d'agir), la "corroboration
+  mouvement" inopérante (les faux positifs d'E surviennent déjà pendant
+  l'immobilité — l'absence de mouvement ne distingue pas éveillé de
+  endormi).
+  **Recherche HRV (2026-08-16)** : la variabilité de la fréquence
+  cardiaque (pas seulement son niveau) est le signal qui permet à Apple
+  Watch/Samsung Health de distinguer "éveillé immobile" de "endormi" —
+  exactement le trou de profil E. Vérifié empiriquement sur l'appareil
+  réel de Lionel (Health Connect) : **Samsung Health n'écrit aucune
+  donnée HRV** — verrouillée derrière le programme partenaire Samsung
+  Health Sensor SDK. Garmin expose la HRV via Connect IQ mais uniquement
+  à une app tournant sur une montre Garmin (ne se transpose pas à
+  Samsung). Seul Apple l'expose publiquement (HealthKit, sans
+  partenariat) — mais nécessite une app iOS, hors de portée immédiate
+  (obstacle Mac déjà documenté). **Décision de Lionel** : garder cet
+  argument pour l'expansion iOS future, ne rien entreprendre maintenant.
+  Voir [[project_scope_multibrand_goal]] (mémoire).
+  **Expérience actigraphie (Cole-Kripke, 2026-08-16, dernière piste
+  testée)** : pur (mouvement seul) → 76,1% de faux positifs
+  (catastrophique). Hybride (actigraphie ET BPM doivent s'accorder) →
+  faux positifs réellement améliorés (1,54% contre 2,02%) mais
+  détections manquées plus que doublées (25,9% contre 11,0%) — ne passe
+  pas le critère double non plus. **Cause précise identifiée** :
+  Cole-Kripke a besoin d'un flux de mouvement CONTINU (une valeur
+  d'activité à chaque minute) ; FoxOFF ne reçoit — dans le simulateur
+  ET dans la vraie app montre — que des événements PONCTUELS
+  (`MovementDetected`, seulement au franchissement d'un seuil), jamais un
+  flux continu. Entre deux événements, l'activité est un vrai zéro : la
+  fenêtre glissante juge presque toute la soirée "calme". **Pas une
+  preuve que l'actigraphie ne marche pas — preuve que la donnée
+  nécessaire (flux continu) n'est pas collectée aujourd'hui.** Corriger
+  ça nécessiterait un changement de pipeline de données côté montre (pas
+  un changement d'algorithme côté téléphone) — piste distincte, plus
+  grosse, non explorée.
+  **Conclusion de toute cette investigation (4 pistes indépendantes
+  testées : paramètres, continuité BPM, contexte temporel, actigraphie)** :
+  le problème ne se résout par aucune des quatre. La cause profonde est
+  l'absence d'un signal capable de distinguer "éveillé et immobile" de
+  "endormi" à BPM identique (la HRV), aujourd'hui inaccessible sur le
+  matériel utilisé (voir ci-dessus) — et le mouvement disponible n'est
+  pas assez granulaire pour une approche actigraphie classique. **Décision
+  de Lionel (2026-08-16) : arrêt de la recherche algorithmique.** La
+  configuration de production reste celle appliquée le matin du
+  2026-08-15 — aucune modification supplémentaire. Voir
+  [[project_sleep_detection_investigation]] (mémoire) pour la synthèse
+  complète et éviter de relancer cette recherche sans nouvelle
+  information concrète.
 
 **Effort estimé** : 1-2 semaines.
 

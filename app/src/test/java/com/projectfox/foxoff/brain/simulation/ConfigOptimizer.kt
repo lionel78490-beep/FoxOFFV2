@@ -19,8 +19,10 @@ data class ConfigStats(
     val nightCount: Int,
     val falsePositiveCount: Int,
     val missedDetectionCount: Int,
-    /** Moyenne calculée UNIQUEMENT sur les nuits correctement détectées (ni faux positif, ni manquée). */
+    /** Moyenne/médiane/P95/pire — calculés UNIQUEMENT sur les nuits correctement détectées (ni faux positif, ni manquée). */
     val averageDelayMinutes: Double,
+    val medianDelayMinutes: Double,
+    val p95DelayMinutes: Int,
     val worstDelayMinutes: Int,
     val meanLoss: Double
 ) {
@@ -89,16 +91,25 @@ object ConfigOptimizer {
     fun evaluateConfig(profiles: List<NightProfile>, config: SleepScoringConfig): ConfigStats {
         val simulator = NightSimulator()
         val evals = profiles.map { evaluate(it, config, simulator) }
-        val delays = evals.mapNotNull { it.delayMinutes }
+        val delays = evals.mapNotNull { it.delayMinutes }.sorted()
         return ConfigStats(
             config = config,
             nightCount = profiles.size,
             falsePositiveCount = evals.count { it.isFalsePositive },
             missedDetectionCount = evals.count { it.isMissedDetection },
             averageDelayMinutes = if (delays.isNotEmpty()) delays.average() else Double.NaN,
+            medianDelayMinutes = percentile(delays, 0.50),
+            p95DelayMinutes = percentile(delays, 0.95).let { if (it.isNaN()) -1 else it.toInt() },
             worstDelayMinutes = delays.maxOrNull() ?: -1,
             meanLoss = evals.map { it.loss }.average()
         )
+    }
+
+    /** Percentile par interpolation la plus proche (liste déjà triée) — Double.NaN si vide. */
+    private fun percentile(sortedValues: List<Int>, fraction: Double): Double {
+        if (sortedValues.isEmpty()) return Double.NaN
+        val index = (fraction * (sortedValues.size - 1)).toInt().coerceIn(0, sortedValues.size - 1)
+        return sortedValues[index].toDouble()
     }
 
     /** Tire `attempts` configurations aléatoires dans des plages réalistes centrées sur la production actuelle. */
