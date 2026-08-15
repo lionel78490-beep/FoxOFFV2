@@ -13,6 +13,11 @@ import org.junit.Test
  * premier rapport chiffré sur ce jeu plus riche. Ne modifie AUCUN fichier de
  * production, ne relance PAS de recherche de configuration ici (juste un
  * état des lieux) — voir ROADMAP.md pour la suite proposée.
+ *
+ * Test "lourd" (~10s, léger comparé aux recherches mais quand même un
+ * passage complet sur 100 000 nuits) — exclu par défaut du `./gradlew
+ * test` de routine depuis app/build.gradle.kts (2026-08-16). À lancer à
+ * la demande : `-PheavyTests --tests "*ProfiledNightGeneratorTest*"`.
  */
 class ProfiledNightGeneratorTest {
 

@@ -7,7 +7,9 @@ import org.junit.Test
 
 /**
  * Test "très lourd" (~5-8 min) — à lancer à la demande via
- * `--tests "*OptimizeOnProfiledNightsTest*"`, PAS partie du `./gradlew
+ * `-PheavyTests --tests "*OptimizeOnProfiledNightsTest*"` (exclu par
+ * défaut du `./gradlew test` de routine depuis app/build.gradle.kts,
+ * 2026-08-16), PAS partie du `./gradlew
  * test` de routine. Voir ROADMAP.md Phase 5 — même méthode que
  * `OptimizeSleepScoringConfigTest` (2026-08-15 matin, jeu de 10 000
  * nuits `ProceduralNightGenerator`), rejouée ici sur le jeu plus riche et

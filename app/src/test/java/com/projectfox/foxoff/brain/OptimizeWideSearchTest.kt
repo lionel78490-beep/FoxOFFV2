@@ -7,7 +7,9 @@ import org.junit.Test
 
 /**
  * Test "très lourd" (~8-9 min) — à lancer à la demande via
- * `--tests "*OptimizeWideSearchTest*"`, PAS partie du `./gradlew test`
+ * `-PheavyTests --tests "*OptimizeWideSearchTest*"` (exclu par défaut du
+ * `./gradlew test` de routine depuis app/build.gradle.kts, 2026-08-16),
+ * PAS partie du `./gradlew test`
  * de routine. Voir ROADMAP.md Phase 5.
  *
  * Troisième relance (2026-08-15, demande explicite de Lionel : "plus de

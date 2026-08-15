@@ -122,4 +122,21 @@ dependencies {
 
 }
 
+// Tests "lourds" du framework de simulation de nuits (2026-08-15, voir
+// ROADMAP.md Phase 5) : rejouent 10 000 à 100 000 nuits synthétiques à
+// travers le vrai moteur, plusieurs minutes chacun — exclus du
+// `./gradlew test` de routine pour que les runs quotidiens restent
+// rapides. Pour les lancer explicitement :
+// `./gradlew test -PheavyTests --tests "*OptimizeWideSearchTest*"`.
+tasks.withType<Test>().configureEach {
+    if (!project.hasProperty("heavyTests")) {
+        exclude(
+            "**/OptimizeSleepScoringConfigTest.class",
+            "**/OptimizeOnProfiledNightsTest.class",
+            "**/OptimizeWideSearchTest.class",
+            "**/ProfiledNightGeneratorTest.class"
+        )
+    }
+}
+
 

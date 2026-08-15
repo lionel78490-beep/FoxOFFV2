@@ -7,7 +7,9 @@ import org.junit.Test
 
 /**
  * Test "lourd" (~1-3 min) — à lancer à la demande via
- * `--tests "*OptimizeSleepScoringConfigTest*"`, PAS partie du
+ * `-PheavyTests --tests "*OptimizeSleepScoringConfigTest*"` (exclu par
+ * défaut du `./gradlew test` de routine depuis app/build.gradle.kts,
+ * 2026-08-16), PAS partie du
  * `./gradlew test` de routine. Voir plan 2026-08-15 ("10 000 nuits —
  * framework d'optimisation de SleepScoringConfig"), motivé par le retard
  * de 6h08 constaté sur une vraie nuit ce jour-là (voir `RealNightReplayTest`).
