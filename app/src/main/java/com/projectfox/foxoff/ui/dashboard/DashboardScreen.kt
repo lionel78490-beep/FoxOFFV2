@@ -1,32 +1,51 @@
 package com.projectfox.foxoff.ui.dashboard
 
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Favorite
-import androidx.compose.material.icons.rounded.History
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Settings
-import androidx.compose.material.icons.rounded.Tv
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.projectfox.foxoff.R
 import com.projectfox.foxoff.tv.TvConnectionStatus
 import com.projectfox.foxoff.ui.dashboard.components.*
 import com.projectfox.foxoff.ui.onboarding.components.FoxGradientBackground
+
+/**
+ * Sous-écran affiché sous l'onglet Paramètres — Santé, Historique et TV
+ * n'ont plus leur propre onglet dans la barre du bas (demande explicite du
+ * 2026-08-14 : d'abord Santé/Historique, puis TV "il ne sert a rien ici"),
+ * ils sont désormais atteints depuis Paramètres, avec un simple bouton
+ * retour.
+ */
+private enum class SettingsSubScreen { MAIN, HEALTH, HISTORY, TV }
 
 @Composable
 fun DashboardScreen() {
     val viewModel: DashboardViewModel = viewModel()
     val uiState by viewModel.uiState.collectAsState()
     var selectedTab by remember { mutableIntStateOf(0) }
+    var settingsSubScreen by remember { mutableStateOf(SettingsSubScreen.MAIN) }
     val context = LocalContext.current
 
     // Reconnexion automatique de la montre à l'ouverture du Dashboard (ex:
@@ -64,6 +83,27 @@ fun DashboardScreen() {
     }
 
     FoxGradientBackground {
+        // Fond "renard sur la lune" de l'Accueil dessiné ICI (au-dessus de
+        // FoxGradientBackground, en dehors du Scaffold) pour occuper tout
+        // l'écran — statut de la barre système compris —, demande
+        // explicite du 2026-08-14 ("le fond d'écran doit maintenant
+        // prendre la totalité de l'écran") : à l'intérieur du Scaffold, la
+        // zone de contenu exclut le topBar/bottomBar et les insets système.
+        if (selectedTab == 0) {
+            Image(
+                painter = painterResource(
+                    id = if (surveillanceActive) R.drawable.bg_home_active else R.drawable.bg_home_night
+                ),
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
+            )
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.35f))
+            )
+        }
         Scaffold(
             containerColor = Color.Transparent,
             topBar = {
@@ -75,121 +115,132 @@ fun DashboardScreen() {
                 // onglets.
                 if (selectedTab != 0) {
                     Column(modifier = Modifier.padding(horizontal = 24.dp, vertical = 24.dp)) {
-                        Text(
-                            text = "FOXOFF",
-                            style = MaterialTheme.typography.titleLarge,
-                            color = Color.White,
-                            fontWeight = FontWeight.Black,
-                            letterSpacing = 4.sp
-                        )
+                        // Santé/Historique/TV n'ont plus d'onglet dédié
+                        // (2026-08-14) — un bouton retour simple les
+                        // ramène à la liste des Paramètres plutôt que de
+                        // dupliquer un système de navigation complet.
+                        if (selectedTab == 1 && settingsSubScreen != SettingsSubScreen.MAIN) {
+                            Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                                IconButton(onClick = { settingsSubScreen = SettingsSubScreen.MAIN }) {
+                                    Icon(
+                                        Icons.Default.ArrowBack,
+                                        contentDescription = "Retour",
+                                        tint = Color.White
+                                    )
+                                }
+                                Text(
+                                    text = when (settingsSubScreen) {
+                                        SettingsSubScreen.HEALTH -> "SANTÉ"
+                                        SettingsSubScreen.HISTORY -> "HISTORIQUE"
+                                        SettingsSubScreen.TV -> "TV"
+                                        SettingsSubScreen.MAIN -> ""
+                                    },
+                                    style = MaterialTheme.typography.titleLarge,
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Black,
+                                    letterSpacing = 4.sp
+                                )
+                            }
+                        } else {
+                            Text(
+                                text = "FOXOFF",
+                                style = MaterialTheme.typography.titleLarge,
+                                color = Color.White,
+                                fontWeight = FontWeight.Black,
+                                letterSpacing = 4.sp
+                            )
+                        }
                     }
                 }
             },
             bottomBar = {
-                NavigationBar(
-                    containerColor = Color(0xFF090909),
-                    contentColor = Color.White,
-                    tonalElevation = 8.dp
+                // Barre du bas réduite à 2 onglets (2026-08-14) : TV retiré
+                // ("il ne sert a rien ici"), rejoint Santé/Historique comme
+                // sous-écran de Paramètres — voir SettingsSubScreen.
+                // Cartes-onglets (2026-08-14, "comme tu as fait avec
+                // sommeil tv montre systeme") : remplace le NavigationBar
+                // Material standard par le même style que la grille de
+                // MiniStatCard de FoxHomeHero, plutôt que la barre pleine
+                // largeur à indicateur pilule par défaut.
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .navigationBarsPadding()
+                        .padding(horizontal = 20.dp, vertical = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    NavigationBarItem(
+                    BottomTabCard(
+                        modifier = Modifier.weight(1f),
+                        icon = Icons.Rounded.Home,
+                        label = "Accueil",
                         selected = selectedTab == 0,
-                        onClick = { selectedTab = 0 },
-                        icon = { Icon(Icons.Rounded.Home, contentDescription = null) },
-                        label = { Text("Accueil") },
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = Color.White,
-                            selectedTextColor = Color.White,
-                            indicatorColor = Color.White.copy(alpha = 0.1f),
-                            unselectedIconColor = Color.Gray,
-                            unselectedTextColor = Color.Gray
-                        )
+                        onClick = { selectedTab = 0 }
                     )
-                    NavigationBarItem(
+                    BottomTabCard(
+                        modifier = Modifier.weight(1f),
+                        icon = Icons.Rounded.Settings,
+                        label = "Paramètres",
                         selected = selectedTab == 1,
-                        onClick = { selectedTab = 1 },
-                        icon = { Icon(Icons.Rounded.Favorite, contentDescription = null) },
-                        label = { Text("Santé") },
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = Color.White,
-                            selectedTextColor = Color.White,
-                            indicatorColor = Color.White.copy(alpha = 0.1f),
-                            unselectedIconColor = Color.Gray,
-                            unselectedTextColor = Color.Gray
-                        )
-                    )
-                    NavigationBarItem(
-                        selected = selectedTab == 2,
-                        onClick = { selectedTab = 2 },
-                        icon = { Icon(Icons.Rounded.Tv, contentDescription = null) },
-                        label = { Text("TV") },
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = Color.White,
-                            selectedTextColor = Color.White,
-                            indicatorColor = Color.White.copy(alpha = 0.1f),
-                            unselectedIconColor = Color.Gray,
-                            unselectedTextColor = Color.Gray
-                        )
-                    )
-                    NavigationBarItem(
-                        selected = selectedTab == 3,
-                        onClick = { selectedTab = 3 },
-                        icon = { Icon(Icons.Rounded.Settings, contentDescription = null) },
-                        label = { Text("Paramètres") },
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = Color.White,
-                            selectedTextColor = Color.White,
-                            indicatorColor = Color.White.copy(alpha = 0.1f),
-                            unselectedIconColor = Color.Gray,
-                            unselectedTextColor = Color.Gray
-                        )
-                    )
-                    NavigationBarItem(
-                        selected = selectedTab == 4,
-                        onClick = { selectedTab = 4 },
-                        icon = { Icon(Icons.Rounded.History, contentDescription = null) },
-                        label = { Text("Historique") },
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = Color.White,
-                            selectedTextColor = Color.White,
-                            indicatorColor = Color.White.copy(alpha = 0.1f),
-                            unselectedIconColor = Color.Gray,
-                            unselectedTextColor = Color.Gray
-                        )
+                        onClick = {
+                            selectedTab = 1
+                            // Retaper l'onglet Paramètres ramène toujours à
+                            // sa liste principale, jamais au sous-écran où
+                            // l'utilisateur se trouvait avant de le quitter.
+                            settingsSubScreen = SettingsSubScreen.MAIN
+                        }
                     )
                 }
             }
         ) { padding ->
             if (selectedTab == 0) {
-                // Demande explicite du 2026-08-14 (calquée sur une maquette
-                // de référence) : header centré + illustration contenue +
-                // statut + bouton rond, sans info montre/TV/plage horaire —
-                // FoxHomeHero occupe toute la zone de contenu (plus de
-                // verticalScroll : MainStatusCard/FoxAnalysisCard/
-                // ActiveHoursInfoCard/DeviceCard/TvDashboardCard restent
-                // définies dans DashboardComponents.kt, réutilisables
-                // ailleurs, mais ne sont plus affichées ici).
+                // Dashboard principal permanent (2026-08-14, brief détaillé) :
+                // FoxHomeHero affiche maintenant l'état réel montre/TV/
+                // sommeil en plus du renard — toutes ces données existaient
+                // déjà dans uiState (DashboardViewModel), simplement
+                // branchées ici plutôt que dupliquées.
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(padding)
                 ) {
-                    FoxHomeHero(surveillanceActive = surveillanceActive)
+                    FoxHomeHero(
+                        surveillanceActive = surveillanceActive,
+                        watchConnected = uiState.watchConnected,
+                        watchKnown = uiState.watchKnown,
+                        watchName = uiState.watchName,
+                        tvName = uiState.tvName,
+                        tvStatus = uiState.tvStatus,
+                        sleepState = uiState.sleepState,
+                        confidence = uiState.confidence,
+                        onOpenTv = {
+                            selectedTab = 1
+                            settingsSubScreen = SettingsSubScreen.TV
+                        },
+                        onOpenWatch = {
+                            selectedTab = 1
+                            settingsSubScreen = SettingsSubScreen.HEALTH
+                        },
+                        onOpenSettings = {
+                            selectedTab = 1
+                            settingsSubScreen = SettingsSubScreen.MAIN
+                        }
+                    )
                 }
             } else if (selectedTab == 1) {
+                // Santé, Historique et TV n'ont plus d'onglet dédié
+                // (2026-08-14) — sous-écrans de Paramètres, pilotés par
+                // settingsSubScreen.
                 Box(modifier = Modifier.fillMaxSize().padding(padding)) {
-                    HealthScreen(uiState = uiState)
-                }
-            } else if (selectedTab == 2) {
-                Box(modifier = Modifier.fillMaxSize().padding(padding)) {
-                    RemoteScreen()
-                }
-            } else if (selectedTab == 3) {
-                Box(modifier = Modifier.fillMaxSize().padding(padding)) {
-                    com.projectfox.foxoff.ui.settings.SettingsScreen()
-                }
-            } else if (selectedTab == 4) {
-                Box(modifier = Modifier.fillMaxSize().padding(padding)) {
-                    HistoryScreen()
+                    when (settingsSubScreen) {
+                        SettingsSubScreen.MAIN -> com.projectfox.foxoff.ui.settings.SettingsScreen(
+                            onOpenHealth = { settingsSubScreen = SettingsSubScreen.HEALTH },
+                            onOpenHistory = { settingsSubScreen = SettingsSubScreen.HISTORY },
+                            onOpenTv = { settingsSubScreen = SettingsSubScreen.TV }
+                        )
+                        SettingsSubScreen.HEALTH -> HealthScreen(uiState = uiState)
+                        SettingsSubScreen.HISTORY -> HistoryScreen()
+                        SettingsSubScreen.TV -> RemoteScreen()
+                    }
                 }
             } else {
                 Box(
@@ -206,5 +257,48 @@ fun DashboardScreen() {
         com.projectfox.foxoff.ui.settings.BackgroundMonitoringPromptDialog(
             onDismiss = { showBackgroundMonitoringPrompt = false }
         )
+    }
+}
+
+/**
+ * Onglet du bas façon carte — même langage visuel que la grille d'état de
+ * FoxHomeHero (Sommeil/TV/Montre/Système), demandé explicitement le
+ * 2026-08-14 pour remplacer le NavigationBar Material standard.
+ */
+@Composable
+private fun BottomTabCard(
+    modifier: Modifier = Modifier,
+    icon: ImageVector,
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(20.dp))
+            .background(Color.White.copy(alpha = if (selected) 0.14f else 0.06f))
+            .border(
+                width = 1.dp,
+                color = if (selected) Color.White.copy(alpha = 0.3f) else Color.White.copy(alpha = 0.1f),
+                shape = RoundedCornerShape(20.dp)
+            )
+            .clickable(onClick = onClick)
+            .padding(vertical = 14.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                icon,
+                contentDescription = null,
+                tint = if (selected) Color.White else Color.Gray,
+                modifier = Modifier.size(20.dp)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = label,
+                color = if (selected) Color.White else Color.Gray,
+                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal
+            )
+        }
     }
 }

@@ -22,8 +22,20 @@ data class SleepScoringConfig(
      * voir SleepPauseCoordinator) — une détection plus rapide mais parfois
      * trop optimiste n'est plus aussi risquée qu'avant son existence.
      * Première estimation, à ajuster sur de vraies nuits de test.
+     *
+     * **Changée le 2026-08-15** (18% -> 14,3%) : proposition du framework
+     * d'optimisation à 10 000 nuits synthétiques (`OptimizeSleepScoringConfigTest`,
+     * voir ROADMAP.md Phase 5), validée sur 3 échantillons indépendants
+     * (1000/8000/2000 nuits) avec, ensemble avec les autres champs modifiés
+     * ci-dessous, un délai moyen divisé par 2 (20,9 -> 10,0 min) ET moins de
+     * faux positifs (1,55% -> 1,30%) ET moins de détections manquées (8,50%
+     * -> 6,15%) — pas un compromis. Motivé par un retard réel de 6h08
+     * constaté le 15 août (`RealNightReplayTest`). **Non encore revérifiée
+     * sur une vraie nuit** — le modèle synthétique ne reproduit pas
+     * parfaitement le bruit capteur réel, à confirmer sur les prochaines
+     * nuits.
      */
-    val bpmDropBonus: Float = 0.18f,
+    val bpmDropBonus: Float = 0.143f,
     val stationaryDurationBonus: Float = 0.10f, // +10%
     val tvOnBonus: Float = 0.03f,        // +3%
     val lateNightBonus: Float = 0.05f,   // +5%
@@ -43,8 +55,16 @@ data class SleepScoringConfig(
      * neutralisant presque tout le gain d'un `sustainedBpmDropDuration`.
      * 8% reste un vrai signal (un mouvement franc pénalise toujours) sans
      * effacer la quasi-totalité du dernier cycle de bonus à lui seul.
+     *
+     * **Changée le 2026-08-15** (8% -> 16,7%) : proposition du framework
+     * d'optimisation à 10 000 nuits (voir commentaire de `bpmDropBonus` pour
+     * les résultats validés). Plus sévère qu'avant, mais combinée à
+     * `sustainedBpmDropDuration` ramenée à 1 min (recovery plus rapide entre
+     * deux mouvements) — le compromis inverse de 2026-08-12, validé
+     * différemment cette fois sur 10 000 nuits plutôt qu'une seule nuit
+     * réelle. Non revérifiée sur une vraie nuit.
      */
-    val significantMovementPenalty: Float = 0.08f, // -8%
+    val significantMovementPenalty: Float = 0.167f, // -16,7%
 
     // Thresholds
     /**
@@ -67,8 +87,14 @@ data class SleepScoringConfig(
      * 2026-08-13 (voir WeightedSleepAnalyzer/FoxBrain) : minBpmToday ne peut
      * plus que RESSERRER le seuil par rapport à restingBpmBaseline calibré
      * (Health Connect), jamais l'élargir.
+     *
+     * **Changée le 2026-08-15** (12% -> 7%) : proposition du framework
+     * d'optimisation à 10 000 nuits (voir commentaire de `bpmDropBonus`).
+     * Plus strict qu'avant sur ce qui compte comme "assez bas" — compense
+     * la fenêtre de confirmation raccourcie (`sustainedBpmDropDuration`
+     * 1 min au lieu de 3). Non revérifiée sur une vraie nuit.
      */
-    val bpmDropThreshold: Float = 0.12f,
+    val bpmDropThreshold: Float = 0.070f,
 
     /**
      * Magnitude RMS (m/s², voir MovementEngine côté montre) au-delà de
@@ -83,8 +109,14 @@ data class SleepScoringConfig(
      * détectant les vrais changements de position (les pics observés à
      * 2-7+ dans cette même nuit). À réajuster si trop/pas assez sensible
      * sur d'autres nuits.
+     *
+     * **Changée le 2026-08-15** (2.0 -> 1.55) : proposition du framework
+     * d'optimisation à 10 000 nuits (voir commentaire de `bpmDropBonus`) —
+     * légèrement plus sensible, combinée à `significantMovementPenalty`
+     * bien plus sévère (16,7% au lieu de 8%). Non revérifiée sur une vraie
+     * nuit.
      */
-    val movementThreshold: Float = 2.0f,
+    val movementThreshold: Float = 1.55f,
     val lateNightHour: Int = 23,
 
     /**
@@ -104,8 +136,14 @@ data class SleepScoringConfig(
      * nuit). Ramenée de 5 à 3 min le 2026-08-10, avec `bpmDropBonus` monté à
      * 18% (voir son commentaire) — détection plus rapide, objectif ~15 min
      * jusqu'à ASLEEP dans le meilleur des cas plutôt que ~90 min.
+     *
+     * **Changée le 2026-08-15** (3 min -> 1 min) : proposition du framework
+     * d'optimisation à 10 000 nuits (voir commentaire de `bpmDropBonus`) —
+     * octroi plus fréquent, compensé par `bpmDropThreshold` bien plus
+     * strict (7% au lieu de 12%) pour ne pas reproduire le faux positif du
+     * 2026-08-07/12. Non revérifiée sur une vraie nuit.
      */
-    val sustainedBpmDropDuration: Duration = Duration.ofMinutes(3),
+    val sustainedBpmDropDuration: Duration = Duration.ofMinutes(1),
 
     // Seuils de décision de FoxCore.startOrchestration() (Brain Decision
     // Loop) — déplacés ici depuis des valeurs codées en dur (voir
@@ -114,5 +152,22 @@ data class SleepScoringConfig(
     /** Score au-delà duquel la montre passe en mode Haute Précision. */
     val highPrecisionThreshold: Float = 0.70f,
     /** Confiance minimale exigée pour déclencher la pause TV automatique. */
-    val autoPauseConfidenceThreshold: Float = 0.80f
+    val autoPauseConfidenceThreshold: Float = 0.80f,
+
+    /**
+     * Multiplicateur appliqué au score quand la TV s'éteint
+     * (`WeightedSleepAnalyzer`, branche `TVTurnedOff`). Valeur historique
+     * (0.5) inchangée par défaut — rendue configurable le 2026-08-15 après
+     * un écart réel constaté (nuit du 15 août : TV éteinte en veille
+     * automatique à 04h10 pendant que l'utilisateur dormait déjà, score
+     * amputé de plus de 30 points d'un coup, ~2h de progression annulées,
+     * endormissement confirmé 6h08 après le vrai endormissement réel).
+     * Voir `RealNightReplayTest`/ROADMAP.md Phase 5.
+     *
+     * **Changée le 2026-08-15** (0.5 -> 0.62) : proposition du framework
+     * d'optimisation à 10 000 nuits (voir commentaire de `bpmDropBonus`) —
+     * moins punitif que la valeur historique quand la TV s'éteint seule.
+     * Non revérifiée sur une vraie nuit.
+     */
+    val tvTurnedOffMultiplier: Float = 0.62f
 )

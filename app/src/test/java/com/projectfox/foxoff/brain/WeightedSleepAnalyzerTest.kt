@@ -41,7 +41,13 @@ class WeightedSleepAnalyzerTest {
     // plusieurs heures de sommeil réel (régression du 2026-08-08, corrigée
     // le jour même). Voir SleepScoringConfig pour l'historique complet.
 
-    private fun sustainedSince() = Instant.now().minus(Duration.ofMinutes(6))
+    // Dérivés de config.sustainedBpmDropDuration (pas une valeur codée en
+    // dur) : ces tests vérifient le MÉCANISME d'octroi périodique, pas un
+    // réglage précis — ils doivent rester valides quelle que soit la durée
+    // de confirmation choisie en production (changée plusieurs fois cette
+    // session, dernière fois le 2026-08-15).
+    private fun sustainedSince() = Instant.now().minus(config.sustainedBpmDropDuration).minus(Duration.ofMinutes(5))
+    private fun notYetSustainedSince() = Instant.now().minus(Duration.ofMillis(config.sustainedBpmDropDuration.toMillis() / 2))
 
     @Test
     fun `heart rate drop sustained beyond the required duration grants the bonus`() {
@@ -69,7 +75,7 @@ class WeightedSleepAnalyzerTest {
     @Test
     fun `heart rate drop sustained but less than required duration grants no bonus`() {
         val state = stateWithScore(0.30f, minBpmToday = 60)
-            .copy(bpmBelowBaselineSince = Instant.now().minus(Duration.ofMinutes(2)))
+            .copy(bpmBelowBaselineSince = notYetSustainedSince())
 
         val score = analyzer.analyze(FoxBrainEvent.HeartRateReceived(bpm = 55f, source = "TEST"), state)
 
@@ -78,10 +84,11 @@ class WeightedSleepAnalyzerTest {
 
     @Test
     fun `heart rate drop grants no bonus again before the next period elapses since last grant`() {
-        // Le dernier octroi date de 2 min (< 5 min) : pas encore un nouveau
-        // bonus, même si l'épisode a commencé il y a bien plus longtemps.
+        // Le dernier octroi date de moins d'une demi-période : pas encore un
+        // nouveau bonus, même si l'épisode a commencé il y a bien plus
+        // longtemps.
         val state = stateWithScore(0.30f, minBpmToday = 60)
-            .copy(bpmBelowBaselineSince = sustainedSince(), lastBpmDropBonusAt = Instant.now().minus(Duration.ofMinutes(2)))
+            .copy(bpmBelowBaselineSince = sustainedSince(), lastBpmDropBonusAt = notYetSustainedSince())
 
         val score = analyzer.analyze(FoxBrainEvent.HeartRateReceived(bpm = 55f, source = "TEST"), state)
 
@@ -233,12 +240,12 @@ class WeightedSleepAnalyzerTest {
     // --- TV events ---
 
     @Test
-    fun `tv turned off halves the current probability`() {
+    fun `tv turned off applies the configured multiplier to the current probability`() {
         val state = stateWithScore(0.60f)
 
         val score = analyzer.analyze(FoxBrainEvent.TVTurnedOff, state)
 
-        assertEquals(0.30f, score.sleepProbability, 0.0001f)
+        assertEquals(0.60f * config.tvTurnedOffMultiplier, score.sleepProbability, 0.0001f)
         assertEquals("TV éteinte", score.reason)
     }
 

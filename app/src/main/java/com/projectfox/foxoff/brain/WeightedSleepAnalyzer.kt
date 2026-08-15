@@ -82,7 +82,7 @@ class WeightedSleepAnalyzer(
 
             is FoxBrainEvent.TVTurnedOff -> {
                 // Could potentially reset or lower score
-                currentProb *= 0.5f
+                currentProb *= config.tvTurnedOffMultiplier
                 reason = "TV éteinte"
             }
 

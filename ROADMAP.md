@@ -679,8 +679,167 @@ Phase 8 (voir "Décisions repoussées").
   nuit-là. Nouveau test unitaire dédié (`WeightedSleepAnalyzerTest`)
   reproduisant exactement ce cas. **Statut : compilé, tests verts
   (44 tests `brain/`), non revérifié sur une nuit réelle** — à confirmer.
-
-**DoD** : build debug/release · tests verts · parcours principal testé · zéro régression · doc à jour · commit dédié.
+- ✅ **Fait (2026-08-14)** : **simulateur de 50 nuits de sommeil**
+  synthétiques (`NightSimulationTest`, `brain/simulation/`) — rejoue 50
+  profils répartis en 9 catégories réalistes (endormissement normal/lent,
+  réveil nocturne, mouvement isolé, sans TV, montre déconnectée, insomnie,
+  agitation sans réveil, réveil matinal) à travers le VRAI moteur de
+  production (`FoxBrain`/`WeightedSleepAnalyzer`/
+  `FoxCore.shouldSendAutoPause`), sans attendre de vraies nuits. Filet de
+  non-régression pour toute future modification de seuil. Changement
+  additif requis : `FoxBrainEvent.timestamp` (`val` → `var internal set`)
+  pour rejouer une nuit fictive sans attendre 8h en temps réel — aucun site
+  d'appel existant modifié. **Découverte réelle, non corrigée (hors
+  périmètre)** : `WeightedSleepAnalyzer` n'a aucun mécanisme de décroissance
+  du score quand le BPM remonte SANS mouvement significatif associé (le
+  score reste bloqué à son maximum) — sans conséquence sur `tvIsPaused`
+  (verrou à sens unique, déjà volontaire), mais peut afficher "Sommeil
+  actif" sur l'Accueil longtemps après un réveil calme. Balayage exploratoire
+  ponctuel des seuils (960 configurations, script jetable supprimé après
+  usage) : le réglage actuel de production reste solide et raisonnablement
+  rapide (~15 min meilleur cas, conforme à l'objectif documenté) ; des
+  réglages plus agressifs paraissent plus rapides sur ce modèle synthétique
+  mais correspondent aux valeurs qui ont causé de vrais faux positifs sur
+  de vraies nuits (voir 2026-08-10/13 ci-dessus) — **non appliqués**, le
+  modèle synthétique ne reproduit pas le bruit capteur réel.
+- 🐛 **Faux négatif réel constaté (2026-08-15), non corrigé** : coucher
+  00h04, endormissement confirmé par Samsung Health à 00h26, mais FoxOFF ne
+  confirme ASLEEP (et ne met la TV en pause) qu'à 06h34:58 — **6h08 de
+  retard** (368 min), bien pire que l'incident du 2026-08-12 (1h15). Réveil
+  à 07h30 : la détection n'a servi à rien cette nuit-là. Rejeu exact du
+  journal Historique à travers le vrai moteur
+  (`RealNightReplayTest`, `resources/night-logs/2026-08-15-real-night.log`)
+  — deux causes identifiées et verrouillées par le test : (1) une dizaine
+  de mouvements significatifs en tout début de nuit (s'installer au lit)
+  grignotent (`significantMovementPenalty` -8%) presque autant que les
+  cycles de bonus n'en construisent (+18%/3min), retardant fortement la
+  montée du score ; (2) la TV s'est éteinte à 04h10 (veille automatique
+  probable, pas une action consciente — utilisateur endormi depuis
+  longtemps) et `TVTurnedOff -> currentProb *= 0.5` a effacé plus de
+  30 points de score d'un coup, annulant ~2h de progression. **Aucun
+  correctif appliqué** — proposé à Lionel, en attente de sa décision (les
+  seuils ont déjà été calibrés sur de vraies nuits par le passé, pas
+  question de les retoucher sans relecture). `restingBpmBaseline` réel non
+  disponible dans ce dépôt (calibré côté appareil) — 50 bpm inféré par
+  balayage (reproduit exactement les 3 premiers points de contrôle
+  journalisés), à corriger si la vraie valeur calibrée est communiquée.
+  Lionel a confirmé : extinction TV = veille automatique (il dormait déjà,
+  n'a rien touché).
+- ✅ **Fait (2026-08-15)** : **framework d'optimisation à 10 000 nuits**
+  (`OptimizeSleepScoringConfigTest`, `brain/simulation/ProceduralNightGenerator.kt`
+  + `ConfigOptimizer.kt`), demandé par Lionel suite au faux négatif de 6h08
+  ci-dessus, pour proposer — sans jamais l'appliquer automatiquement — une
+  configuration de `SleepScoringConfig` qui réduit le délai
+  endormissement→pause sans dégrader les faux positifs. Génère 10 000
+  nuits procédurales (paramètres continus, vérité terrain explicite
+  `groundTruthAsleepMinute`, cohérentes avec le vrai journal du 15 août :
+  rafale de mouvements au coucher + extinction TV aléatoire en cours de
+  nuit — angles morts des 50 profils catégoriels du 2026-08-14), split
+  8 000 entraînement / 2 000 validation indépendante (seed fixe,
+  reproductible). Un seul changement de production, additif : `tvTurnedOffMultiplier`
+  (`SleepScoringConfig`, défaut 0.5 — comportement inchangé) rend
+  réglable ce qui était codé en dur, condition nécessaire pour que la
+  recherche puisse explorer la cause n°1 identifiée. Étanchéité stricte
+  vérité-terrain/optimiseur (garde-fou explicite demandé par Lionel) :
+  fichiers séparés, `ConfigOptimizer` ne génère ni n'ajuste jamais de
+  profil.
+  **Premier run (2026-08-15)** : recherche aléatoire (400 configs, filtre
+  grossier puis top 20 réévaluées sur les 8 000 nuits complètes) a trouvé
+  une candidate 2,4× plus rapide que la production (délai moyen 8,5 min
+  contre 20,4 min) — mais **REJETÉE automatiquement par le garde-fou
+  anti-sur-ajustement** : sur les 2 000 nuits de validation indépendantes,
+  son taux de faux positifs (2,8%) dépassait celui de la production
+  (1,6%), alors que le délai lui-même tenait bon (8,4 min). Comportement
+  de protection fonctionnant exactement comme demandé — la configuration
+  de production reste recommandée telle quelle, **aucun changement de
+  valeur appliqué**. Observation secondaire (à garder à l'esprit, pas un
+  bug avéré) : même la config de production affiche sur ce jeu procédural
+  un pire délai jusqu'à 446 min et ~9% de détections manquées sur certains
+  profils extrêmes — à examiner si un futur run cible spécifiquement ces
+  cas plutôt que la moyenne.
+  **Deuxième run (même jour)** : Lionel a demandé une contrainte plus
+  stricte sur les faux positifs. Première tentative avec une contrainte
+  dure sur `pauseErrorRate` (faux positifs + détections manquées
+  combinés) — défaut de méthode découvert : les meilleures candidates
+  échangeaient une baisse des manqués contre une explosion des faux
+  positifs (×7, jusqu'à 10,5% contre 1,55% en production) tout en gardant
+  un total combiné similaire, donc passaient le filtre à tort. Corrigé :
+  contrainte portée spécifiquement sur `falsePositiveRate` (jamais
+  dégradé, à chaque étage), `missedDetectionRate` gardée informative sans
+  contrainte (la baisser est toujours un bonus).
+  **Troisième run (même jour, avec la contrainte corrigée)** :
+  **PROPOSITION VALIDÉE**, confirmée indépendamment sur 1000, 8000 puis
+  2000 nuits — délai moyen divisé par 2 (20,9 → 10,0 min sur validation),
+  faux positifs en baisse (1,55% → 1,30%), détections manquées en baisse
+  (8,50% → 6,15%) : amélioration sur les trois axes, pas un compromis.
+  Config proposée : `bpmDropBonus=0,143` (vs 0,18) ·
+  `bpmDropThreshold=0,070` (vs 0,12, bien plus strict) ·
+  `sustainedBpmDropDuration=1min` (vs 3min) · `movementThreshold=1,55`
+  (vs 2,0, plus sensible) · `significantMovementPenalty=0,167` (vs 0,08,
+  bien plus sévère) · `tvTurnedOffMultiplier=0,62` (vs 0,5 codé en dur
+  historiquement — moins punitif, cohérent avec l'incident du 15 août).
+  Mécanisme plausible : réagit plus vite (fenêtre de confirmation 1 min
+  au lieu de 3) mais compense en étant beaucoup plus strict sur ce qui
+  compte comme "BPM bas" et beaucoup plus sévère sur le mouvement — pas
+  une exploitation dégénérée évidente.
+  ✅ **Appliquée le 2026-08-15, à la demande explicite de Lionel**
+  ("applique le maintenant et on remodifiera plus tard") : les 6 valeurs
+  par défaut de `SleepScoringConfig.kt` mises à jour avec commentaires
+  documentant l'ancienne valeur, la nouvelle, et la justification (voir le
+  fichier). `WeightedSleepAnalyzerTest` (3 tests) et `RealNightReplayTest`
+  corrigés — ils présumaient les anciennes valeurs par défaut :
+  `RealNightReplayTest` épingle désormais explicitement les réglages
+  HISTORIQUES (`historicalConfig`, valeurs réellement actives cette
+  nuit-là) plutôt que `SleepScoringConfig()`, pour rester stable quels que
+  soient les futurs réglages de production ; les 3 tests de
+  `WeightedSleepAnalyzerTest` dérivent désormais leurs durées de
+  `config.sustainedBpmDropDuration` plutôt qu'une valeur codée en dur.
+  Build vert, 152 tests passent (50 nuits catégorielles du 2026-08-14
+  incluses, toujours conformes avec les nouvelles valeurs). **Limite à
+  garder à l'esprit** : validée uniquement sur le modèle synthétique
+  (bruit capteur réel non reproduit, leçon du 2026-08-14) — non revérifiée
+  sur une vraie nuit, à confirmer sur les prochaines nuits de test.
+- ✅ **Fait (2026-08-15)** : **générateur à 100 000+ nuits, 10 profils
+  nommés A-J + combinaisons** (`ProfiledNightGenerator`,
+  `ProfiledNightGeneratorTest`), demande explicite de Lionel après
+  l'application des nouveaux seuils. Aucun processus/bot Android — comme
+  tout le framework depuis le 2026-08-14, uniquement des `NightProfile`
+  (données) rejoués via `NightSimulator` à travers le vrai moteur.
+  Profils de base (durée d'endormissement, exclusifs) : A rapide
+  (20-40min), B normal (40-90min), C lent (90-180min), D très fatigué
+  (5-20min), E difficulté à s'endormir (120-300min, hésitant) + insomnie
+  totale indépendante (~4%). Modificateurs combinables librement : F
+  micro-réveil, G nuit agitée, H signal bruité, I données manquantes
+  (déconnexion montre), J faux signal de sommeil (nouveau mécanisme —
+  `NightProfile.falseDipMinute`/`NightSimulator` : baisse temporaire du
+  BPM vers le niveau "endormi" AVANT le vrai endormissement, sans sommeil
+  réel — teste spécifiquement la robustesse aux faux positifs).
+  **Vérifié** : 100 000 nuits générées, 99,99% strictement distinctes
+  (hors numéro de série), répartition conforme aux poids visés (A 19,2%,
+  B 33,6%, C 14,4%, D 9,6%, E 19,2%, modificateurs F-J tous représentés,
+  56,7% des nuits combinent au moins un modificateur). Passage complet à
+  travers le vrai moteur avec la config de production actuelle (déjà les
+  nouvelles valeurs ci-dessus) : délai moyen 31,1 min, pire cas 473 min,
+  faux positifs 2,04%, détections manquées 10,91% — **plus difficile que
+  le jeu de 10 000 nuits d'hier** (FP 1,30% sur validation), cohérent
+  avec un jeu de test délibérément plus dur (profil J spécifiquement
+  conçu pour stresser les faux positifs, E plus extrême). `ProceduralNightGenerator`
+  (run du 2026-08-15 matin) laissé inchangé pour que ce run reste
+  reproductible tel que documenté ci-dessus.
+  **Recherche relancée sur ce jeu** (`OptimizeOnProfiledNightsTest`, même
+  jour, demande explicite de Lionel) : même méthode à 3 étages, contrainte
+  stricte sur `falsePositiveRate` (80 000 entraînement / 20 000
+  validation, filtre grossier 3000 nuits, 1200 configurations tirées).
+  **Aucune amélioration trouvée** — la config déjà appliquée ce matin
+  ressort elle-même comme la meilleure candidate parmi les 1200 tirées
+  (même seed de tirage que le run précédent, cohérence attendue), ses
+  chiffres sur validation restant identiques à la référence (délai
+  31,4 min, faux positifs 2,02%, manqués 11,04%). **Confirmation utile**
+  plutôt qu'un résultat nul : la config choisie ce matin sur le jeu plus
+  simple de 10 000 nuits généralise bien au jeu plus dur de 100 000 (pas
+  de sur-ajustement au premier jeu), même si ses performances absolues
+  sont naturellement moins bonnes sur ce jeu plus exigeant. Aucun
+  changement supplémentaire appliqué.
 
 **Effort estimé** : 1-2 semaines.
 

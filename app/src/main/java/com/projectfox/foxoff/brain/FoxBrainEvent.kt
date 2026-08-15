@@ -6,7 +6,12 @@ import java.time.Instant
  * Represent all possible inputs for the Fox Brain engine.
  */
 sealed class FoxBrainEvent {
-    val timestamp: Instant = Instant.now()
+    // `internal set` : permet à NightSimulator (app/src/test, voir
+    // brain/simulation/) de rejouer une nuit entière avec des horodatages
+    // fictifs (23h-7h) sans attendre 8h en temps réel, sans toucher à la
+    // valeur par défaut ni à aucun site d'appel existant.
+    var timestamp: Instant = Instant.now()
+        internal set
 
     // Heart Rate Events
     data class HeartRateReceived(val bpm: Float, val source: String) : FoxBrainEvent()

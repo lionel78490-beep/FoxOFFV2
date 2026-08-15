@@ -7,10 +7,16 @@ import android.os.Build
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.ChevronRight
+import androidx.compose.material.icons.rounded.Favorite
+import androidx.compose.material.icons.rounded.History
+import androidx.compose.material.icons.rounded.Tv
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -50,7 +56,11 @@ import kotlinx.coroutines.launch
  */
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-fun SettingsScreen() {
+fun SettingsScreen(
+    onOpenHealth: () -> Unit = {},
+    onOpenHistory: () -> Unit = {},
+    onOpenTv: () -> Unit = {}
+) {
     val context = LocalContext.current
 
     var notificationDenied by remember { mutableStateOf(false) }
@@ -304,6 +314,33 @@ fun SettingsScreen() {
             )
 
             Spacer(modifier = Modifier.height(24.dp))
+
+            // Santé, Historique et TV n'ont plus leur propre onglet dans la
+            // barre du bas (2026-08-14, demande explicite — TV "il ne sert
+            // a rien ici") — accessibles depuis ici désormais.
+            FoxCard {
+                Column {
+                    SettingsNavRow(
+                        icon = Icons.Rounded.Favorite,
+                        label = "Santé",
+                        onClick = onOpenHealth
+                    )
+                    HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+                    SettingsNavRow(
+                        icon = Icons.Rounded.History,
+                        label = "Historique",
+                        onClick = onOpenHistory
+                    )
+                    HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+                    SettingsNavRow(
+                        icon = Icons.Rounded.Tv,
+                        label = "TV",
+                        onClick = onOpenTv
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
 
             FoxCard {
                 Column {
@@ -726,6 +763,36 @@ fun SettingsScreen() {
                     Text("Annuler")
                 }
             }
+        )
+    }
+}
+
+/**
+ * Ligne de navigation vers un sous-écran de Paramètres (Santé, Historique
+ * — 2026-08-14, ces deux écrans ont perdu leur onglet dédié dans la barre
+ * du bas). Icône + libellé + chevron, même esprit que FoxDeviceCard mais
+ * cliquable et sans les infos de statut.
+ */
+@Composable
+private fun SettingsNavRow(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(icon, contentDescription = null, tint = Color.White)
+        Spacer(modifier = Modifier.width(16.dp))
+        Text(text = label, color = Color.White, modifier = Modifier.weight(1f))
+        Icon(
+            Icons.Rounded.ChevronRight,
+            contentDescription = null,
+            tint = Color.Gray
         )
     }
 }

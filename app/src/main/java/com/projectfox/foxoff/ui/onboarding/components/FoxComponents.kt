@@ -15,6 +15,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
@@ -150,17 +151,27 @@ private val OutfitBold = FontFamily(
  * l'utilisateur (2026-08-14) : "Fox" et "FF" en blanc (plus de bleu — la
  * version précédente colorait "FF" en FoxElectricBlue, changement
  * explicite ici), seul le symbole power est le point focal orange, avec
- * un léger halo ("subtle glow ... no excessive neon effect").
+ * un léger halo ("subtle glow ... no excessive neon effect"). Halo
+ * renforcé le même jour ("fait le logo plus lumineux") : léger glow blanc
+ * sur le texte (`Shadow` avec blurRadius — fonctionne sur toutes les API,
+ * contrairement à `Modifier.blur()` qui a besoin d'API 31+ alors que
+ * minSdk = 30) et halo orange plus marqué autour du symbole power.
  */
 @Composable
 fun FoxWordmark(modifier: Modifier = Modifier, fontSize: TextUnit = 44.sp) {
+    val textGlow = androidx.compose.ui.graphics.Shadow(
+        color = Color.White.copy(alpha = 0.6f),
+        offset = androidx.compose.ui.geometry.Offset.Zero,
+        blurRadius = fontSize.value * 0.5f
+    )
     Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
         Text(
             text = "Fox",
             fontSize = fontSize,
             fontFamily = OutfitBlack,
             fontWeight = FontWeight.Black,
-            color = Color.White
+            color = Color.White,
+            style = androidx.compose.ui.text.TextStyle(shadow = textGlow)
         )
         PowerGlyph(
             size = (fontSize.value * 1.0f).dp,
@@ -171,7 +182,8 @@ fun FoxWordmark(modifier: Modifier = Modifier, fontSize: TextUnit = 44.sp) {
             fontSize = fontSize,
             fontFamily = OutfitBold,
             fontWeight = FontWeight.Bold,
-            color = Color.White
+            color = Color.White,
+            style = androidx.compose.ui.text.TextStyle(shadow = textGlow)
         )
     }
 }
@@ -187,7 +199,19 @@ fun FoxWordmark(modifier: Modifier = Modifier, fontSize: TextUnit = 44.sp) {
  */
 @Composable
 private fun PowerGlyph(size: Dp, modifier: Modifier = Modifier) {
-    Canvas(modifier = modifier.size(size)) {
+    Canvas(
+        modifier = modifier
+            .size(size)
+            // Halo orange renforcé ("fait le logo plus lumineux",
+            // 2026-08-14) — Modifier.shadow() plutôt que Modifier.blur()
+            // (nécessiterait API 31+, minSdk du projet = 30).
+            .shadow(
+                elevation = 14.dp,
+                shape = CircleShape,
+                ambientColor = FoxWordmarkOrange,
+                spotColor = FoxWordmarkOrange
+            )
+    ) {
         val strokeWidthPx = this.size.minDimension * 0.17f
         val radius = this.size.minDimension * 0.34f
         val center = Offset(this.size.width / 2f, this.size.height / 2f)
