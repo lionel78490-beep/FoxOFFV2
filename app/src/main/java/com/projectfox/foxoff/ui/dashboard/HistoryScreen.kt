@@ -132,6 +132,7 @@ private fun typeLabelAndColor(type: NightLogType): Pair<String, Color> = when (t
     NightLogType.PAUSE_COUNTDOWN_STARTED -> "Compte à rebours démarré" to Color(0xFFFFA000)
     NightLogType.PAUSE_EXECUTED -> "Pause exécutée" to Color.Green
     NightLogType.PAUSE_CANCELLED -> "Pause annulée" to Color(0xFFFF5252)
+    NightLogType.AUTO_POWER_OFF -> "TV éteinte automatiquement" to Color(0xFFFFA000)
     NightLogType.WATCH_CONNECTED -> "Montre connectée" to Color.Green
     NightLogType.WATCH_DISCONNECTED -> "Montre déconnectée" to Color(0xFFFF5252)
     NightLogType.HEART_RATE_TREND -> "BPM" to Color(0xFF4DD0E1)

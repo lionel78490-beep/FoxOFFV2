@@ -1,6 +1,7 @@
 package com.projectfox.foxoff.tv
 
 import android.content.Context
+import com.projectfox.foxoff.core.automation.TvAutoPowerOffCoordinator
 import com.projectfox.foxoff.core.logging.FoxLogger
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CoroutineScope
@@ -410,13 +411,23 @@ class FoxTvEngine(
     }
 
     /**
-     * Play/Pause manuel : cible exclusivement la TV utilisée, jamais une
-     * boucle. Contrairement à commandTarget() (réservé à l'automatisation),
-     * n'exige pas un statut CONNECTED en cache : une action manuelle
-     * explicite tente réellement, plutôt que de se fier à un statut
-     * potentiellement périmé.
+     * Play/Pause manuel (`manual=true`, valeur par défaut, tous les appels
+     * existants restent inchangés) : cible exclusivement la TV utilisée,
+     * jamais une boucle. Contrairement à commandTarget() (réservé à
+     * l'automatisation), n'exige pas un statut CONNECTED en cache : une
+     * action manuelle explicite tente réellement, plutôt que de se fier à
+     * un statut potentiellement périmé.
+     *
+     * `manual=false` (2026-08-16, réservé à `RealTvController`, jamais
+     * appelé directement ailleurs) : la pause AUTOMATIQUE du sommeil ne
+     * doit surtout pas se signaler elle-même comme une "reprise manuelle"
+     * — voir `TvAutoPowerOffCoordinator` et `FoxForegroundService` pour
+     * l'extinction automatique après 10 min sans reprise.
      */
-    fun pause() {
+    fun pause(manual: Boolean = true) {
+        if (manual) {
+            TvAutoPowerOffCoordinator.notifyManualInteraction()
+        }
         scope.launch {
             val device = activeDevice.value
 
@@ -454,8 +465,53 @@ class FoxTvEngine(
         pause()
     }
 
+    /**
+     * Extinction automatique (2026-08-16, demande explicite) : envoyée par
+     * `FoxForegroundService` quand la pause du sommeil (voir
+     * `SleepPauseCoordinator.executePause()`) n'a été suivie d'aucune
+     * interaction manuelle avec la télécommande FoxOFF pendant 10 minutes
+     * (voir `TvAutoPowerOffCoordinator`) — signal indirect, FoxOFF n'a
+     * aucun moyen d'interroger l'état réel de lecture de la TV (voir
+     * commentaire de `pause()` ci-dessus et de `FoxForegroundService
+     * .startHeartbeat()`).
+     */
+    fun powerOff() {
+        scope.launch {
+            val device = activeDevice.value
+
+            if (device == null) {
+                FoxLogger.e(
+                    "FOX-TV | Power off failed: aucune TV utilisée"
+                )
+                return@launch
+            }
+
+            val result =
+                FoxTvController.powerOff(
+                    context = context,
+                    tvIp = device.address
+                )
+
+            result.onSuccess {
+                FoxLogger.i(
+                    "FOX-TV | POWER OFF sent successfully"
+                )
+            }
+
+            result.onFailure { error ->
+                FoxLogger.e(
+                    "FOX-TV | POWER OFF failed",
+                    error
+                )
+
+                repository.updateStatus(device.id, TvConnectionStatus.ERROR)
+            }
+        }
+    }
+
     /*
-     * FoxOFF ne doit piloter que Play/Pause.
+     * FoxOFF ne doit piloter que Play/Pause (+ l'extinction automatique
+     * ci-dessus, seule exception délibérée, voir powerOff()).
      * Ces fonctions restent présentes pour ne pas casser l'interface actuelle,
      * mais elles ne font volontairement rien.
      */

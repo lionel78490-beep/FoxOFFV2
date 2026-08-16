@@ -1261,6 +1261,30 @@ demander quoi que ce soit d'exceptionnel à l'utilisateur.
   d'immobilité `stationaryDurationBonus`, qui lui dépend du mouvement —
   échantillonné de façon fiable toutes les 30s — plutôt que du BPM).
 
+- ✅ **Fait (2026-08-16)** : extinction automatique de la TV si la pause
+  du sommeil n'est jamais reprise (demande explicite de Lionel). Ajout
+  d'une vraie commande "éteindre" côté télécommande
+  (`TvRemoteClient.connectAndPowerOff()`, `KEYCODE_POWER` — le protocole
+  négociait déjà `FEATURE_POWER` mais aucune commande ne l'utilisait) puis
+  `FoxTvController.powerOff()`/`FoxTvEngine.powerOff()`, même chemin que
+  `pause()`. `FoxForegroundService` programme un minuteur DÉDIÉ de 10 min
+  à chaque nouvelle pause (`scheduleAutoPowerOff()`, indépendant du pas de
+  `startHeartbeat()` — ce dernier ne se réveille que toutes les 30 min une
+  fois en pause, bien trop grossier pour une échéance de 10 min). Comme
+  FoxOFF n'a aucun moyen d'interroger l'état réel de lecture de la TV
+  (voir plus haut), "pas de reprise" est détecté par un proxy assumé :
+  aucune interaction manuelle avec le bouton Play/Pause de la télécommande
+  FoxOFF (`RemoteScreen.kt`) pendant les 10 min (nouveau
+  `TvAutoPowerOffCoordinator`, notifié uniquement par les appels MANUELS à
+  `FoxTvEngine.pause()`, jamais par l'appel automatique du sommeil —
+  distinction faite via `RealTvController.pause()` appelant
+  `engine.pause(manual = false)`). Nouvelle entrée
+  `NightLogType.AUTO_POWER_OFF` ("TV éteinte automatiquement") visible
+  dans l'Historique si ça se déclenche. Délai de 10 min figé (pas
+  réglable dans Paramètres, choix explicite de Lionel — rester simple).
+  **Statut : compilé et vérifié par build complet, non testé sur TV
+  réelle** — nécessite une vraie nuit de test.
+
 **Sortie (spécifique)** : cycle veille→endormissement→pause TV validé sur appareil réel, écran éteint, sur une nuit complète, sans relance manuelle et **sans** exemption batterie activée par défaut.
 
 **DoD** : build debug/release · tests verts · parcours principal testé · zéro régression · doc à jour · commit dédié.

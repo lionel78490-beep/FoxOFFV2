@@ -28,6 +28,10 @@ enum class NightLogType {
     PAUSE_COUNTDOWN_STARTED,
     PAUSE_EXECUTED,
     PAUSE_CANCELLED,
+    // Extinction automatique (2026-08-16) : 10 min après PAUSE_EXECUTED
+    // sans interaction manuelle avec la télécommande FoxOFF — voir
+    // TvAutoPowerOffCoordinator/FoxForegroundService.
+    AUTO_POWER_OFF,
     WATCH_CONNECTED,
     WATCH_DISCONNECTED
 }

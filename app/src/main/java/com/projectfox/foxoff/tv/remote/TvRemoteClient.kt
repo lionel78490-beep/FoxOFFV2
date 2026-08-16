@@ -182,6 +182,166 @@ suspend fun connectAndPause(
 }
 
 /**
+ * Extinction automatique de la TV (2026-08-16, demande explicite : si la
+ * lecture n'a pas été reprise manuellement 10 min après la pause auto du
+ * sommeil, éteindre complètement la TV plutôt que la laisser en pause).
+ * `KEYCODE_POWER` existe déjà dans le protocole (FEATURE_POWER déjà
+ * négociée dans REQUESTED_FEATURES ci-dessus) mais n'était utilisée nulle
+ * part jusqu'ici — seul KEYCODE_MEDIA_PLAY_PAUSE était envoyé.
+ *
+ * Duplique volontairement la séquence de handshake de connectAndPause()
+ * (même raison que testConnection() ci-dessous : ne prendre aucun risque de
+ * régression sur le chemin Play/Pause manuel déjà validé par l'utilisateur).
+ */
+suspend fun connectAndPowerOff(
+    context: Context,
+    ip: String
+): String = withContext(Dispatchers.IO) {
+
+    var rawSocket: Socket? = null
+    var sslSocket: SSLSocket? = null
+
+    try {
+        rawSocket = Socket().apply {
+            connect(
+                InetSocketAddress(ip, REMOTE_PORT),
+                5000
+            )
+            soTimeout = 10_000
+        }
+
+        val identity = TvIdentity(
+            context.applicationContext
+        )
+
+        sslSocket = identity.createSslContext()
+            .socketFactory
+            .createSocket(
+                rawSocket,
+                ip,
+                REMOTE_PORT,
+                true
+            ) as SSLSocket
+
+        sslSocket.useClientMode = true
+        sslSocket.soTimeout = 10_000
+        sslSocket.startHandshake()
+
+        val input = sslSocket.inputStream
+        val output = sslSocket.outputStream
+
+        var remoteReady = false
+        var attempts = 0
+
+        while (!remoteReady && attempts < 20) {
+            attempts++
+
+            val message = readMessage(input)
+
+            when {
+                message.hasRemoteConfigure() -> {
+                    val configureResponse =
+                        Remotemessage.RemoteConfigure.newBuilder()
+                            .setCode1(REQUESTED_FEATURES)
+                            .setDeviceInfo(
+                                Remotemessage.RemoteDeviceInfo.newBuilder()
+                                    .setUnknown1(1)
+                                    .setUnknown2("1")
+                                    .setPackageName("atvremote")
+                                    .setAppVersion("1.0.0")
+                                    .build()
+                            )
+                            .build()
+
+                    val response =
+                        Remotemessage.RemoteMessage.newBuilder()
+                            .setRemoteConfigure(configureResponse)
+                            .build()
+
+                    writeMessage(output, response)
+                }
+
+                message.hasRemoteSetActive() -> {
+                    val activeResponse =
+                        Remotemessage.RemoteSetActive.newBuilder()
+                            .setActive(REQUESTED_FEATURES)
+                            .build()
+
+                    val response =
+                        Remotemessage.RemoteMessage.newBuilder()
+                            .setRemoteSetActive(activeResponse)
+                            .build()
+
+                    writeMessage(output, response)
+                }
+
+                message.hasRemotePingRequest() -> {
+                    val pingResponse =
+                        Remotemessage.RemotePingResponse.newBuilder()
+                            .setVal1(
+                                message.remotePingRequest.val1
+                            )
+                            .build()
+
+                    val response =
+                        Remotemessage.RemoteMessage.newBuilder()
+                            .setRemotePingResponse(pingResponse)
+                            .build()
+
+                    writeMessage(output, response)
+                }
+
+                message.hasRemoteStart() -> {
+                    remoteReady = true
+                }
+            }
+        }
+
+        check(remoteReady) {
+            "La TV n'a pas confirmé RemoteStart"
+        }
+
+        val keyInject =
+            Remotemessage.RemoteKeyInject.newBuilder()
+                .setKeyCode(
+                    Remotemessage.RemoteKeyCode
+                        .KEYCODE_POWER
+                )
+                .setDirection(
+                    Remotemessage.RemoteDirection.SHORT
+                )
+                .build()
+
+        val powerOffMessage =
+            Remotemessage.RemoteMessage.newBuilder()
+                .setRemoteKeyInject(keyInject)
+                .build()
+
+        writeMessage(output, powerOffMessage)
+        Thread.sleep(500)
+
+        "✅ REMOTE CONNECTÉ\n🔌 COMMANDE POWER ENVOYÉE"
+
+    } catch (e: Exception) {
+        buildString {
+            appendLine("❌ REMOTE ÉCHEC")
+            appendLine(e.javaClass.simpleName)
+            append(e.message ?: "Erreur sans message")
+        }
+    } finally {
+        try {
+            sslSocket?.close()
+        } catch (_: Exception) {
+        }
+
+        try {
+            rawSocket?.close()
+        } catch (_: Exception) {
+        }
+    }
+}
+
+/**
  * Vérifie une connexion de contrôle réelle (handshake TLS + RemoteConfigure
  * + attente de RemoteStart) SANS injecter de commande, pour ne pas produire
  * d'action involontaire sur la TV pendant une simple vérification d'état.

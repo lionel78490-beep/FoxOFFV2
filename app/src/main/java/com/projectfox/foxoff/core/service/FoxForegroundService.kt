@@ -21,11 +21,15 @@ import com.projectfox.foxoff.R
 import com.projectfox.foxoff.core.application.BackgroundServiceSettings
 import com.projectfox.foxoff.core.application.FoxCore
 import com.projectfox.foxoff.core.application.WatchSettings
+import com.projectfox.foxoff.core.automation.NightLog
+import com.projectfox.foxoff.core.automation.NightLogType
+import com.projectfox.foxoff.core.automation.TvAutoPowerOffCoordinator
 import com.projectfox.foxoff.core.logging.FoxLogger
 import com.projectfox.foxoff.core.presence.WatchConnectionState
 import com.projectfox.foxoff.core.presence.WatchConnectionStateHolder
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
@@ -106,6 +110,17 @@ class FoxForegroundService : Service() {
         // nuit ne soit détectée qu'à la réouverture de l'app.
         private val POST_PAUSE_HEARTBEAT_MAX_DURATION: Duration = Duration.ofMinutes(30)
 
+        // Extinction automatique de la TV (2026-08-16, demande explicite) :
+        // si la pause du sommeil n'est suivie d'AUCUNE interaction manuelle
+        // avec la télécommande FoxOFF (voir TvAutoPowerOffCoordinator) dans
+        // ce délai, la TV est complètement éteinte plutôt que laissée en
+        // pause indéfiniment. Minuteur DÉDIÉ (scheduleAutoPowerOff()),
+        // séparé de la boucle startHeartbeat() ci-dessous : cette dernière
+        // ne se réveille que toutes les 30 min une fois en pause
+        // (POST_PAUSE_HEARTBEAT_INTERVAL_MS), bien trop grossier pour une
+        // échéance de 10 min.
+        private val AUTO_POWER_OFF_DELAY: Duration = Duration.ofMinutes(10)
+
         // Vérification de visibilité (permission/canal) — nettement plus
         // rapide que le heartbeat ci-dessus (qui sert la reconnexion montre,
         // pas la visibilité) : la promesse de transparence FoxOFF ("pas de
@@ -133,6 +148,11 @@ class FoxForegroundService : Service() {
     // voir FoxBrain.kt, mais gardé par cohérence).
     @Volatile
     private var pausedSince: Instant? = null
+
+    // Minuteur dédié à l'extinction automatique — voir scheduleAutoPowerOff()
+    // ci-dessous. Un seul à la fois (annulé/relancé, jamais empilé).
+    @Volatile
+    private var autoPowerOffJob: Job? = null
 
     // Certains appareils/versions Android permettent de balayer une
     // notification "ongoing" (setOngoing(true) n'empêche pas toujours le
@@ -340,7 +360,21 @@ class FoxForegroundService : Service() {
         scope.launch {
             while (isActive) {
                 val isPaused = FoxCore.brain.state.value.tvIsPaused
+                val wasAlreadyPaused = pausedSince != null
                 pausedSince = if (isPaused) (pausedSince ?: Instant.now()) else null
+
+                // Vient de passer en pause à l'instant précis observé par CE
+                // passage de boucle (première détection) -> programme le
+                // minuteur dédié d'extinction automatique. Ne dépend PAS du
+                // pas de la boucle elle-même (voir doc d'AUTO_POWER_OFF_DELAY).
+                if (isPaused && !wasAlreadyPaused) {
+                    scheduleAutoPowerOff(pausedSince!!)
+                } else if (!isPaused && wasAlreadyPaused) {
+                    // N'arrive normalement pas en pratique (tvIsPaused ne
+                    // repasse jamais à false de lui-même, voir FoxBrain.kt)
+                    // — gardé par cohérence/sécurité si ça changeait un jour.
+                    cancelAutoPowerOff()
+                }
 
                 val elapsedSincePause = pausedSince?.let { Duration.between(it, Instant.now()) }
                 if (elapsedSincePause != null && elapsedSincePause >= POST_PAUSE_HEARTBEAT_MAX_DURATION) {
@@ -362,6 +396,53 @@ class FoxForegroundService : Service() {
                 FoxCore.tvEngine?.refreshActiveDevice()
             }
         }
+    }
+
+    /**
+     * Programme l'extinction automatique de la TV à AUTO_POWER_OFF_DELAY
+     * après [pausedAt] (2026-08-16, demande explicite : "si pas de remise
+     * en route de la TV [après 10 min], éteindre la TV"). Minuteur dédié à
+     * `delay()` unique plutôt qu'accroché au pas de startHeartbeat() —
+     * cette dernière ne se réveille que toutes les 30 min une fois en
+     * pause, bien trop grossier pour une échéance de 10 min.
+     *
+     * Remis à zéro (`TvAutoPowerOffCoordinator.reset()`) à chaque nouvel
+     * épisode de pause, pour ne jamais réagir à une interaction manuelle
+     * d'un épisode précédent (nuit précédente, ou pause déjà traitée cette
+     * même nuit — rare, `tvIsPaused` ne redevenant vrai qu'une fois par
+     * process, voir FoxCore.shouldSendAutoPause()).
+     */
+    private fun scheduleAutoPowerOff(pausedAt: Instant) {
+        autoPowerOffJob?.cancel()
+        TvAutoPowerOffCoordinator.reset()
+        autoPowerOffJob = scope.launch {
+            delay(AUTO_POWER_OFF_DELAY.toMillis())
+            if (!isActive) return@launch
+
+            if (TvAutoPowerOffCoordinator.hasManualInteractionSince(pausedAt)) {
+                FoxLogger.i(
+                    "FOX-BG | Extinction auto annulée : interaction manuelle avec la télécommande " +
+                            "détectée dans les ${AUTO_POWER_OFF_DELAY.toMinutes()} min suivant la pause"
+                )
+                return@launch
+            }
+
+            FoxLogger.i(
+                "FOX-BG | ${AUTO_POWER_OFF_DELAY.toMinutes()} min après la pause sans reprise -> " +
+                        "extinction automatique de la TV"
+            )
+            FoxCore.tvEngine?.powerOff()
+            NightLog.record(
+                applicationContext,
+                NightLogType.AUTO_POWER_OFF,
+                "Aucune reprise détectée ${AUTO_POWER_OFF_DELAY.toMinutes()} min après la pause"
+            )
+        }
+    }
+
+    private fun cancelAutoPowerOff() {
+        autoPowerOffJob?.cancel()
+        autoPowerOffJob = null
     }
 
     /**

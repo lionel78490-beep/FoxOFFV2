@@ -32,6 +32,36 @@ object FoxTvController {
     }
 
     /**
+     * Extinction automatique (2026-08-16) : voir FoxTvEngine.powerOff() pour
+     * le contexte (pause du sommeil jamais reprise après 10 min).
+     */
+    suspend fun powerOff(
+        context: Context,
+        tvIp: String
+    ): Result<Unit> {
+        return try {
+            require(tvIp.isNotBlank()) {
+                "Adresse IP de la TV manquante"
+            }
+
+            val result = TvRemoteClient.connectAndPowerOff(
+                context = context.applicationContext,
+                ip = tvIp.trim()
+            )
+
+            if (result.contains("REMOTE CONNECTÉ")) {
+                Result.success(Unit)
+            } else {
+                Result.failure(
+                    IllegalStateException(result)
+                )
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    /**
      * Vérifie une connexion de contrôle réelle vers la TV (handshake TLS),
      * sans envoyer aucune commande. Distingue un échec réseau (TV éteinte,
      * injoignable...) d'un rejet d'identité TLS confirmé, pour décider s'il
