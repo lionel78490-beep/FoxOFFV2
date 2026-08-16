@@ -275,11 +275,12 @@ fun FoxHomeHero(
         // (bg_home_night.png, fixe), pas une illustration séparée : cet
         // espace à POIDS laisse le renard du fond respirer, en absorbant
         // l'espace vertical restant (voir commentaire du Column ci-dessus).
-        // Poids monté à 1.65f (2026-08-16, "redescends un peu le texte [...]
-        // sur la lune") : le texte de description remontait trop près du
-        // renard/de la lune du fond, décalé plus bas pour laisser plus de
-        // séparation visuelle.
-        Spacer(modifier = Modifier.weight(1.65f))
+        // Poids remonté à 5.5f (2026-08-16, vrai Z Fold 6 — chaque
+        // augmentation déplace de moins en moins en pixels (rendements
+        // décroissants à mesure que ce poids capte déjà la quasi-totalité
+        // de la marge disponible face à weight(0.35f) plus bas) : 1.65f
+        // puis 2.3f puis 3.2f restaient encore insuffisants.
+        Spacer(modifier = Modifier.weight(5.5f))
 
         Text(
             text = description,
@@ -336,7 +337,7 @@ fun FoxHomeHero(
                 onClick = onOpenTv
             )
         }
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(10.dp))
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -476,7 +477,7 @@ private fun MiniStatCard(
             .background(Color.White.copy(alpha = 0.06f))
             .border(1.dp, Color.White.copy(alpha = 0.1f), RoundedCornerShape(20.dp))
             .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
-            .padding(14.dp)
+            .padding(11.dp)
     ) {
         Column {
             Row(verticalAlignment = Alignment.CenterVertically) {
