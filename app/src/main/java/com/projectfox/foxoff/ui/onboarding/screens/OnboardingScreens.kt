@@ -593,7 +593,7 @@ fun WatchBrandScreen(onNext: () -> Unit) {
  * pourrait ne pas exister plutôt que d'inventer une URL.
  */
 @Composable
-fun WatchAppInstallScreen(onNext: () -> Unit) {
+fun WatchAppInstallScreen(onNext: () -> Unit, onBack: (() -> Unit)? = null) {
     val context = LocalContext.current
     val watchBrand = remember {
         com.projectfox.foxoff.core.application.WatchSettings.getWatchBrand(context)
@@ -645,13 +645,20 @@ fun WatchAppInstallScreen(onNext: () -> Unit) {
             FoxSubtitle(text = "Revenez ici une fois l'installation terminée.")
 
             Spacer(modifier = Modifier.weight(1f))
-            FoxButton(text = "Continuer", onClick = onNext)
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                FoxButton(text = "Continuer", onClick = onNext)
+                if (onBack != null) {
+                    TextButton(onClick = onBack, modifier = Modifier.padding(top = 8.dp)) {
+                        Text("Retour", color = Color.Gray, style = MaterialTheme.typography.labelMedium)
+                    }
+                }
+            }
         }
     }
 }
 
 @Composable
-fun WatchDetectionScreen(onNext: () -> Unit) {
+fun WatchDetectionScreen(onNext: () -> Unit, onBack: (() -> Unit)? = null) {
     val core = com.projectfox.foxoff.core.application.FoxCore
     val context = LocalContext.current
     val watchInfo by core.watchInfo.collectAsState()
@@ -714,7 +721,14 @@ fun WatchDetectionScreen(onNext: () -> Unit) {
                 }
             }
             Spacer(modifier = Modifier.weight(1f))
-            FoxButton(text = "Continuer", onClick = onNext, enabled = !isSearching)
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                FoxButton(text = "Continuer", onClick = onNext, enabled = !isSearching)
+                if (onBack != null) {
+                    TextButton(onClick = onBack, modifier = Modifier.padding(top = 8.dp)) {
+                        Text("Retour", color = Color.Gray, style = MaterialTheme.typography.labelMedium)
+                    }
+                }
+            }
         }
     }
 }
@@ -931,7 +945,7 @@ fun PreviewWelcome() { com.projectfox.foxoff.ui.theme.FoxTheme { WelcomeScreen {
 
 @androidx.compose.ui.tooling.preview.Preview
 @Composable
-fun PreviewWatch() { com.projectfox.foxoff.ui.theme.FoxTheme { WatchDetectionScreen {} } }
+fun PreviewWatch() { com.projectfox.foxoff.ui.theme.FoxTheme { WatchDetectionScreen(onNext = {}) } }
 
 @androidx.compose.ui.tooling.preview.Preview
 @Composable

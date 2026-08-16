@@ -1,5 +1,6 @@
 package com.projectfox.foxoff.ui.dashboard
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -48,6 +49,10 @@ fun DashboardScreen() {
     var settingsSubScreen by remember { mutableStateOf(SettingsSubScreen.MAIN) }
     val context = LocalContext.current
 
+    BackHandler(enabled = selectedTab == 1 && settingsSubScreen != SettingsSubScreen.MAIN) {
+        settingsSubScreen = SettingsSubScreen.MAIN
+    }
+
     // Reconnexion automatique de la montre à l'ouverture du Dashboard (ex:
     // relance de l'app), une seule fois par session — pas à chaque
     // changement d'onglet. FoxCore.discoverWatch() a son propre verrou
@@ -89,6 +94,14 @@ fun DashboardScreen() {
         // explicite du 2026-08-14 ("le fond d'écran doit maintenant
         // prendre la totalité de l'écran") : à l'intérieur du Scaffold, la
         // zone de contenu exclut le topBar/bottomBar et les insets système.
+        // L'onglet Paramètres (et ses sous-écrans Montre/Historique/TV) a
+        // aussi eu le fond bg_home_* en plein écran (2026-08-16, "rajoute
+        // le fond comme l'ecran d'acceuil dans les parametres" puis "je
+        // veux que sa prenne tout l'ecran de l'onglet parametre"), mais le
+        // renard gênait la lisibilité des tuiles/cartes/listes — demande
+        // finale : le fond ciel étoilé + forêt (bg_welcome_night, déjà
+        // utilisé par l'onboarding, sans le renard) en plein écran, avec le
+        // renard réduit uniquement en médaillon haut-droite par-dessus.
         if (selectedTab == 0) {
             Image(
                 painter = painterResource(
@@ -102,6 +115,30 @@ fun DashboardScreen() {
                 modifier = Modifier
                     .fillMaxSize()
                     .background(Color.Black.copy(alpha = 0.35f))
+            )
+        } else if (selectedTab == 1) {
+            Image(
+                painter = painterResource(id = R.drawable.bg_welcome_night),
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
+            )
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.25f))
+            )
+            Image(
+                painter = painterResource(
+                    id = if (surveillanceActive) R.drawable.badge_fox_moon_active else R.drawable.badge_fox_moon_night
+                ),
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = 56.dp, end = 20.dp)
+                    .size(84.dp)
+                    .clip(RoundedCornerShape(20.dp))
             )
         }
         Scaffold(
@@ -233,7 +270,6 @@ fun DashboardScreen() {
                 Box(modifier = Modifier.fillMaxSize().padding(padding)) {
                     when (settingsSubScreen) {
                         SettingsSubScreen.MAIN -> com.projectfox.foxoff.ui.settings.SettingsScreen(
-                            onOpenHealth = { settingsSubScreen = SettingsSubScreen.HEALTH },
                             onOpenHistory = { settingsSubScreen = SettingsSubScreen.HISTORY },
                             onOpenTv = { settingsSubScreen = SettingsSubScreen.TV }
                         )

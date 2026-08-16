@@ -19,7 +19,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Bedtime
 import androidx.compose.material.icons.rounded.ChevronRight
-import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.MonitorHeart
 import androidx.compose.material.icons.rounded.PhoneAndroid
@@ -61,7 +60,6 @@ import com.projectfox.foxoff.ui.onboarding.OnboardingSettings
 import com.projectfox.foxoff.ui.onboarding.components.FoxCard
 import com.projectfox.foxoff.ui.onboarding.components.FoxGradientBackground
 import com.projectfox.foxoff.ui.theme.FoxElectricBlue
-import com.projectfox.foxoff.ui.theme.FoxElectricViolet
 import kotlinx.coroutines.launch
 
 /**
@@ -74,7 +72,6 @@ import kotlinx.coroutines.launch
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun SettingsScreen(
-    onOpenHealth: () -> Unit = {},
     onOpenHistory: () -> Unit = {},
     onOpenTv: () -> Unit = {}
 ) {
@@ -307,22 +304,34 @@ fun SettingsScreen(
         WatchSettings.clearKnownDevice(context)
         // Même raison que resetOnboarding() : FoxCore.initialize() ne lit le
         // transport qu'une fois au démarrage du processus, un redémarrage
-        // complet est nécessaire pour qu'il prenne effet.
+        // complet est nécessaire pour qu'il prenne effet. EXTRA_WATCH_ONLY_SETUP
+        // fait réafficher l'écran de recherche de montre juste après le
+        // redémarrage plutôt que l'Accueil (2026-08-16, "sa me remet a la
+        // page d'acceuil je voudrais que sa me mette en recherche d'une
+        // nouvelle montre a connecté") — même mécanisme que WatchBrandScreen
+        // pendant l'onboarding (voir EXTRA_ONBOARDING_START_ROUTE), sans
+        // rejouer tout l'onboarding.
         val intent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+            putExtra(MainActivity.EXTRA_ONBOARDING_START_ROUTE, "watch_app_install")
+            putExtra(MainActivity.EXTRA_WATCH_ONLY_SETUP, true)
         }
         context.startActivity(intent)
     }
 
-    FoxGradientBackground {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 24.dp, vertical = 24.dp)
-                .verticalScroll(rememberScrollState())
-        ) {
-            Text(
-                text = "RÉGLAGES",
+    // Fond "renard sur la lune" partagé avec l'Accueil (dessiné par
+    // DashboardScreen derrière cet écran, voir sa condition sur
+    // SettingsSubScreen.MAIN) — plus de fond opaque FoxGradientBackground
+    // ici, sinon il masquerait ce fond commun (2026-08-16, "rajoute le
+    // fond comme l'ecran d'acceuil dans les parametres").
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 24.dp, vertical = 24.dp)
+            .verticalScroll(rememberScrollState())
+    ) {
+        Text(
+            text = "RÉGLAGES",
                 style = MaterialTheme.typography.titleLarge,
                 color = Color.White,
                 fontWeight = FontWeight.Black,
@@ -331,44 +340,50 @@ fun SettingsScreen(
 
             Spacer(modifier = Modifier.height(28.dp))
 
-            // RACCOURCIS — Santé, Historique et TV n'ont plus leur propre
-            // onglet dans la barre du bas (2026-08-14, "TV il ne sert a
-            // rien ici") — mis en avant ici sous forme de 3 tuiles
-            // (2026-08-16, "tout soit intuitif et beau visuellement") plutôt
-            // qu'une liste générique à puces, pour un accès rapide en un
-            // coup d'œil, cohérent avec le style de la grille de l'Accueil.
+            // RACCOURCIS — Historique et TV n'ont plus leur propre onglet
+            // dans la barre du bas (2026-08-14, "TV il ne sert a rien ici")
+            // — mis en avant ici sous forme de 3 tuiles (2026-08-16, "tout
+            // soit intuitif et beau visuellement") plutôt qu'une liste
+            // générique à puces, pour un accès rapide en un coup d'œil,
+            // cohérent avec le style de la grille de l'Accueil. Santé
+            // remplacée par Montre le même jour (demande explicite) — la
+            // tuile ouvre directement le dialogue "Changer de montre" (pas
+            // de sous-écran dédié "Montre", contrairement à Historique/TV :
+            // les infos montre restent dans la carte plus bas sur cet
+            // écran, la tuile ne fait qu'accélérer l'accès à son action
+            // principale).
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 SettingsShortcutTile(
                     modifier = Modifier.weight(1f),
-                    icon = Icons.Rounded.Favorite,
-                    label = "Santé",
-                    accent = SettingsRed,
-                    onClick = onOpenHealth
+                    icon = Icons.Rounded.Watch,
+                    label = "Montre",
+                    accent = SettingsBrandOrange,
+                    onClick = { showChangeWatchDialog = true }
                 )
                 SettingsShortcutTile(
                     modifier = Modifier.weight(1f),
                     icon = Icons.Rounded.History,
                     label = "Historique",
-                    accent = FoxElectricBlue,
+                    accent = SettingsBrandOrange,
                     onClick = onOpenHistory
                 )
                 SettingsShortcutTile(
                     modifier = Modifier.weight(1f),
                     icon = Icons.Rounded.Tv,
                     label = "TV",
-                    accent = FoxElectricViolet,
+                    accent = SettingsBrandOrange,
                     onClick = onOpenTv
                 )
             }
 
             SettingsSectionLabel("SURVEILLANCE")
 
-            FoxCard {
+            FoxCard(containerColor = Color.White.copy(alpha = 0.06f)) {
                 Column {
-                    SettingsCardHeader(icon = Icons.Rounded.Bedtime, accent = FoxElectricBlue, title = "Surveillance en arrière-plan") {
+                    SettingsCardHeader(icon = Icons.Rounded.Bedtime, accent = SettingsBrandOrange, title = "Surveillance en arrière-plan") {
                         Switch(
                             checked = backgroundEnabled,
                             onCheckedChange = { checked ->
@@ -415,9 +430,9 @@ fun SettingsScreen(
 
             Spacer(modifier = Modifier.height(14.dp))
 
-            FoxCard {
+            FoxCard(containerColor = Color.White.copy(alpha = 0.06f)) {
                 Column {
-                    SettingsCardHeader(icon = Icons.Rounded.RestartAlt, accent = FoxElectricViolet, title = "Créneaux horaires actifs")
+                    SettingsCardHeader(icon = Icons.Rounded.RestartAlt, accent = SettingsBrandOrange, title = "Créneaux horaires actifs")
                     Text(
                         text = "Limite la surveillance aux créneaux sélectionnés (ex. seulement " +
                                 "le soir) plutôt qu'en continu toute la journée. Aucun créneau " +
@@ -434,7 +449,11 @@ fun SettingsScreen(
                             FilterChip(
                                 selected = slot in selectedSlots,
                                 onClick = { toggleActiveHoursSlot(slot) },
-                                label = { Text(slot.label) }
+                                label = { Text(slot.label) },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = SettingsBrandOrange,
+                                    selectedLabelColor = Color.White
+                                )
                             )
                         }
                     }
@@ -443,9 +462,9 @@ fun SettingsScreen(
 
             Spacer(modifier = Modifier.height(14.dp))
 
-            FoxCard {
+            FoxCard(containerColor = Color.White.copy(alpha = 0.06f)) {
                 Column {
-                    SettingsCardHeader(icon = Icons.Rounded.PhoneAndroid, accent = FoxElectricBlue, title = "Pause du téléphone")
+                    SettingsCardHeader(icon = Icons.Rounded.PhoneAndroid, accent = SettingsBrandOrange, title = "Pause du téléphone")
                     SettingsStatusRow(
                         if (hasPhoneMediaAccess) "Accès accordé" else "Accès non accordé",
                         if (hasPhoneMediaAccess) SettingsGreen else Color.Gray
@@ -476,9 +495,9 @@ fun SettingsScreen(
 
             SettingsSectionLabel("APPAREILS & DONNÉES")
 
-            FoxCard {
+            FoxCard(containerColor = Color.White.copy(alpha = 0.06f)) {
                 Column {
-                    SettingsCardHeader(icon = Icons.Rounded.Watch, accent = FoxElectricBlue, title = "Montre")
+                    SettingsCardHeader(icon = Icons.Rounded.Watch, accent = SettingsBrandOrange, title = "Montre")
                     Text(
                         text = "Marque active : " + when (watchBrand) {
                             WatchBrand.WEAR_OS -> "Wear OS (Samsung Galaxy Watch et compatibles)"
@@ -510,9 +529,9 @@ fun SettingsScreen(
 
                 Spacer(modifier = Modifier.height(14.dp))
 
-                FoxCard {
+                FoxCard(containerColor = Color.White.copy(alpha = 0.06f)) {
                     Column {
-                        SettingsCardHeader(icon = Icons.Rounded.MonitorHeart, accent = SettingsRed, title = "BPM de repos")
+                        SettingsCardHeader(icon = Icons.Rounded.MonitorHeart, accent = SettingsBrandOrange, title = "BPM de repos")
                         SettingsStatusRow(
                             if (calibratedBpm != null) "$calibratedBpm bpm — calibré depuis $healthSourceName" else "70 bpm — valeur générique (non calibrée)",
                             if (calibratedBpm != null) SettingsGreen else Color.Gray
@@ -562,9 +581,9 @@ fun SettingsScreen(
 
             SettingsSectionLabel("APPLICATION")
 
-            FoxCard {
+            FoxCard(containerColor = Color.White.copy(alpha = 0.06f)) {
                 Column {
-                    SettingsCardHeader(icon = Icons.Rounded.Settings, accent = Color.White.copy(alpha = 0.6f), title = "Paramètres Android")
+                    SettingsCardHeader(icon = Icons.Rounded.Settings, accent = SettingsBrandOrange, title = "Paramètres Android")
                     Text(
                         text = "Certains téléphones (notamment Samsung) limitent les " +
                                 "applications en arrière-plan sauf autorisation manuelle. " +
@@ -590,9 +609,9 @@ fun SettingsScreen(
 
             Spacer(modifier = Modifier.height(14.dp))
 
-            FoxCard {
+            FoxCard(containerColor = Color.White.copy(alpha = 0.06f)) {
                 Column {
-                    SettingsCardHeader(icon = Icons.Rounded.SettingsBackupRestore, accent = Color.White.copy(alpha = 0.6f), title = "Onboarding")
+                    SettingsCardHeader(icon = Icons.Rounded.SettingsBackupRestore, accent = SettingsBrandOrange, title = "Onboarding")
                     Text(
                         text = "Repasse par les écrans de configuration initiale (permissions, " +
                                 "montre, TV...) au prochain lancement, sans réinstaller l'application.",
@@ -611,7 +630,7 @@ fun SettingsScreen(
 
             Spacer(modifier = Modifier.height(14.dp))
 
-            FoxCard {
+            FoxCard(containerColor = Color.White.copy(alpha = 0.06f)) {
                 Column {
                     SettingsCardHeader(icon = Icons.Rounded.Warning, accent = SettingsOrange, title = "Limite importante", titleColor = SettingsOrange)
                     Text(
@@ -627,7 +646,6 @@ fun SettingsScreen(
 
             Spacer(modifier = Modifier.height(24.dp))
         }
-    }
 
     if (showResetOnboardingConfirm) {
         AlertDialog(
@@ -718,6 +736,16 @@ fun SettingsScreen(
 private val SettingsOrange = Color(0xFFFFA000)
 private val SettingsRed = Color(0xFFFF5252)
 private val SettingsGreen = Color(0xFF4CAF50)
+
+// Orange du logo FoxOFF (2026-08-16, "fait les logo en orange pour
+// rappeler la couleur de FoxOFF") — même valeur exacte que
+// FoxWordmarkOrange dans FoxComponents.kt (wordmark "Fox⏻FF"), dupliquée
+// ici plutôt que partagée (cohérent avec SettingsOrange/Red/Green
+// ci-dessus, mêmes valeurs que FoxHomeHero.kt sans dépendance croisée).
+// Utilisée pour toutes les icônes décoratives (tuiles de raccourci,
+// en-têtes de carte) — distincte de SettingsOrange, réservée aux vrais
+// signaux d'attention/statut (ex. "Limite importante").
+private val SettingsBrandOrange = Color(0xFFFF7A1A)
 
 /**
  * Tuile de raccourci vers un sous-écran de Paramètres (Santé, Historique,

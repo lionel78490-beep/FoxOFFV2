@@ -11,7 +11,7 @@ import androidx.navigation.navArgument
 import com.projectfox.foxoff.ui.onboarding.screens.*
 
 @Composable
-fun OnboardingNavigation(onFinish: () -> Unit, startRoute: String = "welcome") {
+fun OnboardingNavigation(onFinish: () -> Unit, startRoute: String = "welcome", watchOnlyMode: Boolean = false) {
     val navController = rememberNavController()
 
     NavHost(
@@ -70,7 +70,14 @@ fun OnboardingNavigation(onFinish: () -> Unit, startRoute: String = "welcome") {
             enterTransition = { slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.Start, tween(700)) },
             exitTransition = { slideOutOfContainer(AnimatedContentTransitionScope.SlideDirection.Start, tween(700)) }
         ) {
-            WatchAppInstallScreen(onNext = { navController.navigate("watch_detection") })
+            // "Retour" affiché uniquement en watchOnlyMode (changement de
+            // montre depuis Réglages) : pas de sens de proposer un retour
+            // pendant l'onboarding normal, où cet écran est le tout premier
+            // après le choix de la marque et n'a nulle part où revenir.
+            WatchAppInstallScreen(
+                onNext = { navController.navigate("watch_detection") },
+                onBack = if (watchOnlyMode) ({ onFinish() }) else null
+            )
         }
 
         composable(
@@ -78,7 +85,16 @@ fun OnboardingNavigation(onFinish: () -> Unit, startRoute: String = "welcome") {
             enterTransition = { slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.Start, tween(700)) },
             exitTransition = { slideOutOfContainer(AnimatedContentTransitionScope.SlideDirection.Start, tween(700)) }
         ) {
-            WatchDetectionScreen(onNext = { navController.navigate("tv_detection") })
+            // watchOnlyMode (changement de montre depuis Réglages, voir
+            // MainActivity.EXTRA_WATCH_ONLY_SETUP) : une fois la nouvelle
+            // montre détectée, on revient directement au tableau de bord
+            // plutôt que d'enchaîner sur la détection TV (déjà configurée).
+            WatchDetectionScreen(
+                onNext = {
+                    if (watchOnlyMode) onFinish() else navController.navigate("tv_detection")
+                },
+                onBack = if (watchOnlyMode) ({ navController.popBackStack() }) else null
+            )
         }
 
         composable(

@@ -264,6 +264,13 @@ private fun PowerGlyph(size: Dp, modifier: Modifier = Modifier) {
 @Composable
 fun FoxCard(
     modifier: Modifier = Modifier,
+    // Opaque par défaut (comportement historique, inchangé partout où ce
+    // paramètre n'est pas fourni). SettingsScreen le remplace par un blanc
+    // très transparent (2026-08-16, "pas un gros rectangle [opaque], comme
+    // ceux de montre" — même valeur que SettingsShortcutTile) pour laisser
+    // voir le fond étoilé derrière les cartes, plutôt que le bloc quasi
+    // opaque d'origine.
+    containerColor: Color = FoxBlackSurface.copy(alpha = 0.8f),
     content: @Composable ColumnScope.() -> Unit
 ) {
     Surface(
@@ -277,7 +284,7 @@ fun FoxCard(
                 ),
                 shape = RoundedCornerShape(32.dp)
             ),
-        color = FoxBlackSurface.copy(alpha = 0.8f),
+        color = containerColor,
         contentColor = Color.White
     ) {
         Column(

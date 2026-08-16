@@ -30,7 +30,6 @@ import com.projectfox.foxoff.tv.TvDevice
 import com.projectfox.foxoff.tv.TvSelectDeviceOutcome
 import com.projectfox.foxoff.ui.onboarding.components.FoxButton
 import com.projectfox.foxoff.ui.onboarding.components.FoxCard
-import com.projectfox.foxoff.ui.onboarding.components.FoxGradientBackground
 
 private sealed class TvScreenView {
     object List : TvScreenView()
@@ -50,13 +49,16 @@ fun RemoteScreen() {
     var currentView by remember { mutableStateOf<TvScreenView>(TvScreenView.List) }
     var infoMessage by remember { mutableStateOf<String?>(null) }
 
-    FoxGradientBackground {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
+    // Pas de FoxGradientBackground opaque ici : le fond "renard sur la
+    // lune" partagé avec Accueil/Paramètres (dessiné par DashboardScreen
+    // derrière cet écran) serait sinon masqué (2026-08-16, "je veux que sa
+    // prenne tout l'ecran de l'onglet parametre").
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
             infoMessage?.let { message ->
                 Row(
                     modifier = Modifier
@@ -121,7 +123,6 @@ fun RemoteScreen() {
                 }
             }
         }
-    }
 
     // Dialogues globaux : une vérification peut avoir été déclenchée depuis
     // l'écran de scan (correspondance par adresse/nom), donc affichés
