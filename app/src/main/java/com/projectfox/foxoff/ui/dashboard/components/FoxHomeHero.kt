@@ -15,13 +15,10 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.PowerSettingsNew
-import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -240,34 +237,35 @@ fun FoxHomeHero(
     // 2026-08-14 ("le fond d'écran doit maintenant prendre la totalité de
     // l'écran"), ce que la zone de contenu du Scaffold ne permettait pas.
 
+    // Plus de verticalScroll (2026-08-16, demande explicite : tout doit
+    // tenir sur un seul écran, jamais défiler) : les deux Spacer à poids
+    // ci-dessous (zone renard + zone avant le bouton) absorbent l'espace
+    // vertical restant et se répartissent sur TOUTE la hauteur d'écran
+    // disponible, quelle que soit la taille de l'appareil — remplace les
+    // hauteurs fixes d'origine qui laissaient un grand vide en bas sur les
+    // écrans hauts (Column+weight exige des contraintes bornées, donc
+    // incompatible avec verticalScroll, qui mesurait en hauteur infinie).
     Column(
         modifier = modifier
             .fillMaxSize()
-            .verticalScroll(rememberScrollState())
             .padding(horizontal = 20.dp, vertical = 16.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        // HEADER — logo + statut bref + accès rapide aux Paramètres,
-        // demandé explicitement ("bouton menu / paramètres" dans le header).
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                com.projectfox.foxoff.ui.onboarding.components.FoxWordmark(fontSize = 24.sp)
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    FoxPulsingDot(color = accentColor, size = 8.dp)
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = headline,
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = accentColor
-                    )
-                }
-            }
-            IconButton(onClick = onOpenSettings) {
-                Icon(Icons.Rounded.Settings, contentDescription = "Paramètres", tint = Color.White.copy(alpha = 0.8f))
+        // HEADER — logo + statut bref. Icône Paramètres retirée du header
+        // le 2026-08-16 ("il ne sert à rien", demande explicite) : redondante
+        // avec l'onglet "Paramètres" déjà présent dans la barre du bas
+        // (voir DashboardScreen) — un seul accès aux Paramètres, pas deux.
+        Column(modifier = Modifier.fillMaxWidth()) {
+            com.projectfox.foxoff.ui.onboarding.components.FoxWordmark(fontSize = 24.sp)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                FoxPulsingDot(color = accentColor, size = 8.dp)
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = headline,
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = accentColor
+                )
             }
         }
 
@@ -275,9 +273,13 @@ fun FoxHomeHero(
 
         // ZONE PRINCIPALE — le renard est maintenant celui du fond
         // (bg_home_night.png, fixe), pas une illustration séparée : cet
-        // espace réservé laisse simplement le renard du fond respirer,
-        // sans rien superposer par-dessus.
-        Spacer(modifier = Modifier.height(256.dp))
+        // espace à POIDS laisse le renard du fond respirer, en absorbant
+        // l'espace vertical restant (voir commentaire du Column ci-dessus).
+        // Poids monté à 1.65f (2026-08-16, "redescends un peu le texte [...]
+        // sur la lune") : le texte de description remontait trop près du
+        // renard/de la lune du fond, décalé plus bas pour laisser plus de
+        // séparation visuelle.
+        Spacer(modifier = Modifier.weight(1.65f))
 
         Text(
             text = description,
@@ -306,7 +308,7 @@ fun FoxHomeHero(
             )
         }
 
-        Spacer(modifier = Modifier.height(20.dp))
+        Spacer(modifier = Modifier.height(14.dp))
 
         // ÉTAT DU SYSTÈME — grille 2×2 compacte (pas les grandes
         // PremiumDashboardCard utilisées ailleurs, trop hautes pour 4
@@ -377,7 +379,7 @@ fun FoxHomeHero(
             )
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(12.dp))
 
         // MESSAGE RASSURANT — petit renard + phrase qui change selon
         // systemState, demandé explicitement, distinct du message
@@ -399,7 +401,11 @@ fun FoxHomeHero(
             )
         }
 
-        Spacer(modifier = Modifier.height(20.dp))
+        // Poids réduit (2026-08-16, "trop d'espace au dessus de mettre en
+        // pause") par rapport à la zone renard ci-dessus (1.4f) : la
+        // majorité de l'espace restant va au renard, le bouton reste
+        // proche du message rassurant plutôt que de flotter au milieu.
+        Spacer(modifier = Modifier.weight(0.35f))
 
         // BOUTON PRINCIPAL — libellé texte réel (pas une icône seule),
         // demandé explicitement : "Mettre en pause" / "Reprendre la
