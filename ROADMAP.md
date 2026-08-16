@@ -912,6 +912,74 @@ Phase 8 (voir "Décisions repoussées").
   [[project_sleep_detection_investigation]] (mémoire) pour la synthèse
   complète et éviter de relancer cette recherche sans nouvelle
   information concrète.
+- 🐛 **Régression réelle confirmée et corrigée (2026-08-16, même jour)** :
+  la nuit de test suivant l'application des nouvelles valeurs (15-16 août,
+  coucher 21h28) a révélé un ÉCHEC TOTAL — FoxOFF n'a jamais confirmé
+  ASLEEP ni mis la TV en pause de toute la nuit (score bloqué à 0% de 1h15
+  à 7h40, soit 6h25), alors que Samsung Health détectait l'endormissement
+  en 26 minutes. Journal réel capturé
+  (`resources/night-logs/2026-08-15-post-optimization-night.log`) et
+  rejoué à travers le vrai moteur avec la config de production actuelle
+  (`RealNightReplayPostOptimizationTest`, baseline calibré à 50 sur les
+  2 premiers points de contrôle, reproduits à l'exact).
+  **Cause précise, nouvelle, jamais testée sur données synthétiques** :
+  interaction entre `minBpmToday` (plancher qui ne fait que baisser toute
+  la nuit, par conception, voir FoxBrain/WeightedSleepAnalyzer) et
+  `bpmDropThreshold` resserré à 7% — une seule lecture basse (44 bpm à
+  1h05) a fait chuter le plancher à 44, rendant le seuil "assez bas"
+  ≈47 bpm, alors que le BPM de sommeil réel de Lionel cette nuit-là
+  oscillait naturellement entre 45 et 58 bpm. La majorité des lectures de
+  sommeil authentiques ne passaient plus sous ce seuil devenu trop étroit
+  → plus aucun bonus BPM accordé pendant 6h25, score écrasé par le premier
+  mouvement significatif et jamais reconstitué. Combiné aux deux causes
+  déjà connues (coupure TV `×0,62` qui a fait perdre 35 min de progrès à
+  23h59, pénalité mouvement durcie à 16,7%).
+  **Preuve comparative** (`compare config actuelle vs historique sur la
+  meme nuit`, même test) : rejeu de la MÊME nuit avec les 6 valeurs
+  historiques (avant le 15 août) → score final 76% contre 0% avec les
+  valeurs du 15 août. Le modèle synthétique d'optimisation (BPM de
+  sommeil stable autour d'une valeur unique par nuit) ne reproduit pas ce
+  phénomène de plancher glissant — angle mort du framework
+  d'optimisation entier, pas seulement de cette config précise.
+  ✅ **Corrigé (2026-08-16), à la demande explicite de Lionel** : les
+  6 valeurs de `SleepScoringConfig.kt` remises à leurs valeurs historiques
+  (`bpmDropBonus` 0,143→0,18 · `bpmDropThreshold` 0,070→0,12 ·
+  `sustainedBpmDropDuration` 1min→3min · `movementThreshold` 1,55→2,0 ·
+  `significantMovementPenalty` 0,167→0,08 · `tvTurnedOffMultiplier`
+  0,62→0,5), chaque champ documenté avec l'historique complet
+  (2026-08-15 → 2026-08-16). Build vert, aucun test cassé (aucun test
+  n'assumait les valeurs post-optimisation en dur). Le bug de fond
+  (plancher `minBpmToday` + seuil resserré) reste identifié mais NON
+  corrigé séparément — piste ouverte si une future tentative de resserrage
+  du seuil est envisagée : ne resserrer le seuil qu'après confirmation du
+  sommeil, pas dès la toute première lecture basse de la nuit.
+- ✅ **Amélioration validée et appliquée (2026-08-16, même jour, sur
+  demande explicite "TROUVE MAINTENANT L'AMÉLIORATION A FAIRE")** :
+  `OptimizeWithRealNightsTest`, nouvelle méthode corrigeant l'angle mort du
+  matin (validation SEULEMENT synthétique) — ajoute les DEUX vraies nuits
+  capturées comme contrainte de validation, en plus du dual-contrainte
+  FP/manqués synthétique habituel. Candidate trouvée parmi 900 tirées (9
+  passent le filtre synthétique, 1 seule bat aussi la production sur les 2
+  vraies nuits) : délai jusqu'à ASLEEP nuit du 15 août 360→270 min (-25%),
+  nuit du 15-16 août 406→146 min (-64%) ; synthétique (8000 nuits) FP
+  1,71%→1,65%, manqués 21,81%→21,33% ; confirmé sur 4000 nuits
+  indépendantes (seed différent) FP 1,83%→1,80%, manqués 20,72%→20,00%.
+  Amélioration sur tous les axes. Champ additif introduit en parallèle,
+  `debounceMinBpmFloor` (défaut `false`, testé isolément mais insuffisant
+  seul pour sauver la config de 7% du matin — la sévérité de
+  `significantMovementPenalty` combinée au seuil resserré dominait plus
+  que le plancher glissant) — piste secondaire non retenue pour cette
+  candidate mais gardée disponible.
+  ✅ **Appliquée en production le 2026-08-16** : `bpmDropBonus` 0,18→0,243 ·
+  `bpmDropThreshold` 0,12→0,110 · `sustainedBpmDropDuration` 3min→2min49s ·
+  `movementThreshold` 2,0→3,25 · `significantMovementPenalty` 0,08→0,134 ·
+  `tvTurnedOffMultiplier` 0,5→0,956 (quasi plus de pénalité coupure TV —
+  corrige directement la cause n°1 du 15 août). `WeightedSleepAnalyzerTest`
+  (2 tests) corrigé — magnitude de mouvement codée en dur (2.5/3.0)
+  tombait sous le nouveau seuil 3,25, dérivée de `config.movementThreshold`
+  désormais. Build vert, 155 tests passent. **Validée sur seulement 2
+  vraies nuits** (risque résiduel assumé et documenté) — à confirmer sur
+  les prochaines nuits de test réelles.
 
 **Effort estimé** : 1-2 semaines.
 

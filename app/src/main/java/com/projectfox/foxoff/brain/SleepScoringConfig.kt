@@ -30,12 +30,39 @@ data class SleepScoringConfig(
      * ci-dessous, un délai moyen divisé par 2 (20,9 -> 10,0 min) ET moins de
      * faux positifs (1,55% -> 1,30%) ET moins de détections manquées (8,50%
      * -> 6,15%) — pas un compromis. Motivé par un retard réel de 6h08
-     * constaté le 15 août (`RealNightReplayTest`). **Non encore revérifiée
-     * sur une vraie nuit** — le modèle synthétique ne reproduit pas
-     * parfaitement le bruit capteur réel, à confirmer sur les prochaines
-     * nuits.
+     * constaté le 15 août (`RealNightReplayTest`).
+     *
+     * **Revenue à 14,3% -> 18% le 2026-08-16** : la vérification sur vraie
+     * nuit annoncée ci-dessus a eu lieu (`RealNightReplayPostOptimizationTest`,
+     * nuit du 15-16 août) et a révélé une régression réelle sévère — FoxOFF
+     * n'a JAMAIS confirmé ASLEEP ni mis la TV en pause de toute la nuit
+     * (score bloqué à 0% de 1h15 à 7h40), alors que Samsung Health détectait
+     * l'endormissement en 26 min. Cause combinée avec `bpmDropThreshold` et
+     * `significantMovementPenalty` (voir leurs commentaires) : le plancher
+     * `minBpmToday` se resserre en continu pendant la nuit, et un seuil de
+     * tolérance trop strict autour de ce plancher finit par exclure des
+     * lectures de sommeil pourtant normales. Rejeu de cette même nuit avec
+     * les 6 valeurs historiques : score final 76% contre 0% avec les
+     * valeurs du 15 août — preuve concrète que le modèle synthétique
+     * d'optimisation (BPM de sommeil stable autour d'une valeur) ne
+     * reproduit pas ce phénomène de plancher glissant, angle mort de tout
+     * le framework d'optimisation. Voir ROADMAP.md Phase 5 et mémoire
+     * `project_sleep_detection_investigation`.
+     *
+     * **Changée le 2026-08-16 (même jour, deuxième révision)** (18% ->
+     * 24,3%) : `OptimizeWithRealNightsTest`, recherche corrigeant l'angle
+     * mort ci-dessus en ajoutant les DEUX vraies nuits capturées à ce jour
+     * comme contrainte de validation (en plus du jeu synthétique, dual
+     * contrainte FP/manqués habituelle). Validée : délai jusqu'à ASLEEP sur
+     * la nuit du 15 août 360 -> 270 min (-25%), sur la nuit du 15-16 août
+     * 406 -> 146 min (-64%) ; synthétique (8000 nuits) FP 1,71% -> 1,65%,
+     * manqués 21,81% -> 21,33% ; confirmé sur 4000 nuits indépendantes
+     * (seed différent) FP 1,83% -> 1,80%, manqués 20,72% -> 20,00%.
+     * Amélioration sur tous les axes, pas un compromis — mais validée sur
+     * seulement 2 vraies nuits (risque résiduel assumé, contrairement à la
+     * tentative du matin même, purement synthétique).
      */
-    val bpmDropBonus: Float = 0.143f,
+    val bpmDropBonus: Float = 0.243f,
     val stationaryDurationBonus: Float = 0.10f, // +10%
     val tvOnBonus: Float = 0.03f,        // +3%
     val lateNightBonus: Float = 0.05f,   // +5%
@@ -62,9 +89,19 @@ data class SleepScoringConfig(
      * `sustainedBpmDropDuration` ramenée à 1 min (recovery plus rapide entre
      * deux mouvements) — le compromis inverse de 2026-08-12, validé
      * différemment cette fois sur 10 000 nuits plutôt qu'une seule nuit
-     * réelle. Non revérifiée sur une vraie nuit.
+     * réelle.
+     *
+     * **Revenue à 16,7% -> 8% le 2026-08-16** : régression réelle constatée
+     * sur vraie nuit, voir commentaire de `bpmDropBonus`.
+     *
+     * **Changée à nouveau le 2026-08-16 (même jour)** (8% -> 13,4%) :
+     * `OptimizeWithRealNightsTest`, voir résultats complets dans le
+     * commentaire de `bpmDropBonus`. Valeur intermédiaire entre l'historique
+     * (8%) et la tentative ratée du matin (16,7%), combinée à
+     * `movementThreshold` relevé à 3,25 (moins de mouvements comptent comme
+     * "significatifs" en premier lieu).
      */
-    val significantMovementPenalty: Float = 0.167f, // -16,7%
+    val significantMovementPenalty: Float = 0.134f, // -13,4%
 
     // Thresholds
     /**
@@ -92,9 +129,23 @@ data class SleepScoringConfig(
      * d'optimisation à 10 000 nuits (voir commentaire de `bpmDropBonus`).
      * Plus strict qu'avant sur ce qui compte comme "assez bas" — compense
      * la fenêtre de confirmation raccourcie (`sustainedBpmDropDuration`
-     * 1 min au lieu de 3). Non revérifiée sur une vraie nuit.
+     * 1 min au lieu de 3).
+     *
+     * **Revenue à 7% -> 12% le 2026-08-16** : régression réelle constatée
+     * sur vraie nuit, voir commentaire de `bpmDropBonus`. Cause précise ici :
+     * combiné au plancher `minBpmToday` qui se resserre en continu (voir
+     * WeightedSleepAnalyzer/FoxBrain), 7% de tolérance autour d'un plancher
+     * déjà tombé à 44 bpm ne laisse passer que les BPM ≤ ~47 — trop strict
+     * pour un sommeil réel qui oscille naturellement sur plusieurs bpm
+     * (45-58 bpm observés cette nuit-là). 12% redonne la marge nécessaire.
+     *
+     * **Changée à nouveau le 2026-08-16 (même jour)** (12% -> 11,0%) :
+     * `OptimizeWithRealNightsTest`, voir résultats complets dans le
+     * commentaire de `bpmDropBonus`. Quasi inchangée par rapport à
+     * l'historique — la leçon du plancher glissant (voir ci-dessus) est
+     * respectée, contrairement à la tentative ratée du matin (7%).
      */
-    val bpmDropThreshold: Float = 0.070f,
+    val bpmDropThreshold: Float = 0.110f,
 
     /**
      * Magnitude RMS (m/s², voir MovementEngine côté montre) au-delà de
@@ -113,10 +164,20 @@ data class SleepScoringConfig(
      * **Changée le 2026-08-15** (2.0 -> 1.55) : proposition du framework
      * d'optimisation à 10 000 nuits (voir commentaire de `bpmDropBonus`) —
      * légèrement plus sensible, combinée à `significantMovementPenalty`
-     * bien plus sévère (16,7% au lieu de 8%). Non revérifiée sur une vraie
-     * nuit.
+     * bien plus sévère (16,7% au lieu de 8%).
+     *
+     * **Revenue à 1.55 -> 2.0 le 2026-08-16** : régression réelle constatée
+     * sur vraie nuit, voir commentaire de `bpmDropBonus`.
+     *
+     * **Changée à nouveau le 2026-08-16 (même jour)** (2.0 -> 3.25) :
+     * `OptimizeWithRealNightsTest`, voir résultats complets dans le
+     * commentaire de `bpmDropBonus`. Encore MOINS sensible que
+     * l'historique — moins de mouvements comptent comme "significatifs",
+     * combiné à `significantMovementPenalty` relevée à 13,4% (chaque
+     * mouvement qui compte vraiment pénalise un peu plus, mais il y en a
+     * moins).
      */
-    val movementThreshold: Float = 1.55f,
+    val movementThreshold: Float = 3.25f,
     val lateNightHour: Int = 23,
 
     /**
@@ -141,9 +202,17 @@ data class SleepScoringConfig(
      * d'optimisation à 10 000 nuits (voir commentaire de `bpmDropBonus`) —
      * octroi plus fréquent, compensé par `bpmDropThreshold` bien plus
      * strict (7% au lieu de 12%) pour ne pas reproduire le faux positif du
-     * 2026-08-07/12. Non revérifiée sur une vraie nuit.
+     * 2026-08-07/12.
+     *
+     * **Revenue à 1 min -> 3 min le 2026-08-16** : régression réelle
+     * constatée sur vraie nuit, voir commentaire de `bpmDropBonus`.
+     *
+     * **Changée à nouveau le 2026-08-16 (même jour)** (3 min -> 2min49s) :
+     * `OptimizeWithRealNightsTest`, voir résultats complets dans le
+     * commentaire de `bpmDropBonus`. Quasi inchangée par rapport à
+     * l'historique.
      */
-    val sustainedBpmDropDuration: Duration = Duration.ofMinutes(1),
+    val sustainedBpmDropDuration: Duration = Duration.ofSeconds(169), // 2min49s
 
     // Seuils de décision de FoxCore.startOrchestration() (Brain Decision
     // Loop) — déplacés ici depuis des valeurs codées en dur (voir
@@ -167,7 +236,51 @@ data class SleepScoringConfig(
      * **Changée le 2026-08-15** (0.5 -> 0.62) : proposition du framework
      * d'optimisation à 10 000 nuits (voir commentaire de `bpmDropBonus`) —
      * moins punitif que la valeur historique quand la TV s'éteint seule.
-     * Non revérifiée sur une vraie nuit.
+     *
+     * **Revenue à 0.62 -> 0.5 le 2026-08-16** : régression réelle constatée
+     * sur vraie nuit, voir commentaire de `bpmDropBonus`. Note : ce champ
+     * n'est pas la cause principale de cette régression précise (la
+     * coupure TV a fait perdre des points mais le score s'en était remis),
+     * revenu à l'historique par cohérence avec le reste des 6 valeurs —
+     * toutes proposées et validées ensemble par le même run d'optimisation
+     * du 15 août, donc reprises ensemble.
+     *
+     * **Changée à nouveau le 2026-08-16 (même jour)** (0.5 -> 0.956) :
+     * `OptimizeWithRealNightsTest`, voir résultats complets dans le
+     * commentaire de `bpmDropBonus`. Quasi plus de pénalité du tout quand
+     * la TV s'éteint seule — corrige directement la cause n°1 identifiée
+     * dès le 15 août (extinction TV en veille automatique pendant le
+     * sommeil, ~30 points de score perdus d'un coup).
      */
-    val tvTurnedOffMultiplier: Float = 0.62f
+    val tvTurnedOffMultiplier: Float = 0.956f,
+
+    /**
+     * Ajouté le 2026-08-16 (candidat au réglage de la régression du
+     * `minBpmToday` glissant — voir commentaire de `bpmDropBonus` et
+     * ROADMAP.md Phase 5). `minBpmToday` (FoxBrain) ne fait que baisser
+     * toute la nuit par conception (voir sa doc) : une lecture BPM isolée
+     * et basse (bruit capteur ou vrai micro-creux ponctuel) resserre
+     * PERMANENMENT le seuil "assez bas" pour tout le reste de la nuit, même
+     * si elle n'est jamais reconfirmée. Quand ce champ est `true`, une
+     * nouvelle valeur plus basse ne devient le nouveau `minBpmToday` que si
+     * la lecture SUIVANTE est aussi proche de ce nouveau creux (à
+     * `minBpmConfirmationToleranceBpm` près) — une lecture isolée reste en
+     * attente (`FoxBrainState.pendingLowBpm`) sans resserrer le seuil tant
+     * qu'elle n'est pas confirmée.
+     *
+     * `false` par défaut : AUCUN changement de comportement tant que ce
+     * champ n'est pas activé explicitement (champ additif, comme
+     * `tvTurnedOffMultiplier` en son temps) — pas encore validé sur assez
+     * de nuits réelles pour devenir la valeur par défaut.
+     */
+    val debounceMinBpmFloor: Boolean = false,
+
+    /**
+     * Tolérance (en bpm) utilisée par `debounceMinBpmFloor` (voir sa doc)
+     * pour juger qu'une deuxième lecture confirme le creux détecté par la
+     * première, plutôt que d'exiger une valeur strictement identique (le
+     * BPM varie naturellement de quelques battements d'une lecture à
+     * l'autre même pendant un sommeil stable).
+     */
+    val minBpmConfirmationToleranceBpm: Int = 2
 )

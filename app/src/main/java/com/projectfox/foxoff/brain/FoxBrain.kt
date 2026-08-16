@@ -75,6 +75,14 @@ class FoxBrain(
                             !Duration.between(reference, event.timestamp).isNegative &&
                             Duration.between(reference, event.timestamp) >= config.sustainedBpmDropDuration
 
+                    val (newMinBpmToday, newPendingLowBpm) = nextMinBpmToday(
+                        currentMin = baseState.minBpmToday,
+                        pendingLow = baseState.pendingLowBpm,
+                        bpm = bpm,
+                        debounce = config.debounceMinBpmFloor,
+                        toleranceBpm = config.minBpmConfirmationToleranceBpm
+                    )
+
                     baseState.copy(
                         // Un BPM reçu EST une preuve applicative de présence
                         // (voir WatchPresenceCoordinator) : il doit à lui seul
@@ -84,7 +92,8 @@ class FoxBrain(
                         watchConnected = true,
                         currentBpm = bpm,
                         lastBpmTime = LocalTime.now(),
-                        minBpmToday = if (baseState.minBpmToday == 0) bpm else minOf(baseState.minBpmToday, bpm),
+                        minBpmToday = newMinBpmToday,
+                        pendingLowBpm = newPendingLowBpm,
                         maxBpmToday = maxOf(baseState.maxBpmToday, bpm),
                         bpmBelowBaselineSince = when {
                             !belowThreshold -> null
@@ -136,6 +145,32 @@ class FoxBrain(
                 )
                 else -> baseState
             }
+        }
+    }
+
+    /**
+     * Calcule le prochain `minBpmToday`/`pendingLowBpm` pour une lecture BPM
+     * donnée. Comportement par défaut (`debounce = false`, historique,
+     * inchangé) : `minBpmToday` se resserre immédiatement dès la moindre
+     * lecture plus basse, `pendingLowBpm` reste toujours `null`. Comportement
+     * "debounced" (`debounce = true`, voir SleepScoringConfig.debounceMinBpmFloor) :
+     * une lecture plus basse que le minimum courant devient seulement un
+     * CANDIDAT (`pendingLowBpm`) tant qu'elle n'est pas confirmée par une
+     * lecture suivante proche (`toleranceBpm`) — une seule lecture isolée et
+     * basse (bruit capteur ou micro-creux ponctuel) ne resserre donc plus le
+     * seuil pour tout le reste de la nuit à elle seule.
+     */
+    private fun nextMinBpmToday(
+        currentMin: Int, pendingLow: Int?, bpm: Int, debounce: Boolean, toleranceBpm: Int
+    ): Pair<Int, Int?> {
+        if (currentMin == 0) return bpm to null // toute première lecture de la session : commit immédiat
+        if (!debounce) return minOf(currentMin, bpm) to null
+        if (bpm >= currentMin) return currentMin to null // pas un nouveau creux : rien à confirmer
+        // bpm < currentMin : nouveau candidat plus bas.
+        return if (pendingLow != null && bpm <= pendingLow + toleranceBpm) {
+            minOf(bpm, pendingLow) to null // confirmé par une lecture proche : on committe
+        } else {
+            currentMin to bpm // pas encore confirmé : on attend la prochaine lecture
         }
     }
 

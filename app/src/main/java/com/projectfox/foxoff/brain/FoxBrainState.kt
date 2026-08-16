@@ -68,5 +68,18 @@ data class FoxBrainState(
      * nuit du 2026-08-07 au 08, corrigée le 08-08). Remis à null dès que le
      * BPM repasse au-dessus du seuil (nouvel épisode à venir).
      */
-    val lastBpmDropBonusAt: Instant? = null
+    val lastBpmDropBonusAt: Instant? = null,
+
+    /**
+     * Candidat NON CONFIRMÉ à une nouvelle valeur de `minBpmToday`, utilisé
+     * uniquement quand `SleepScoringConfig.debounceMinBpmFloor` est actif
+     * (voir FoxBrain, champ additif, comportement par défaut inchangé —
+     * ajouté le 2026-08-16 après une régression réelle où une lecture BPM
+     * isolée et basse (44 bpm, jamais reconfirmée par une lecture proche
+     * suivante) a resserré `minBpmToday` de façon disproportionnée pour le
+     * reste de la nuit, voir ROADMAP.md Phase 5 "Régression réelle
+     * confirmée et corrigée"). Reste `null` tant qu'aucune lecture sous le
+     * `minBpmToday` courant n'est en attente de confirmation.
+     */
+    val pendingLowBpm: Int? = null
 )

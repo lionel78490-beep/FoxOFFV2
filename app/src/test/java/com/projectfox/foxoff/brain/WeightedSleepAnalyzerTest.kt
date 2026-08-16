@@ -166,10 +166,10 @@ class WeightedSleepAnalyzerTest {
     fun `significant movement decreases probability`() {
         val state = stateWithScore(0.50f)
 
-        // Au-delà du seuil recalibré (2.0, voir SleepScoringConfig) après la
-        // nuit de test du 2026-08-08 — 2.5 correspond à un vrai changement
-        // de position, pas un micro-ajustement du poignet.
-        val score = analyzer.analyze(FoxBrainEvent.MovementDetected(magnitude = 2.5f), state)
+        // Dérivé de config.movementThreshold plutôt que codé en dur (ce
+        // seuil a déjà changé plusieurs fois, voir SleepScoringConfig) —
+        // n'importe quelle magnitude strictement au-dessus doit pénaliser.
+        val score = analyzer.analyze(FoxBrainEvent.MovementDetected(magnitude = config.movementThreshold + 0.5f), state)
 
         assertEquals(0.50f - config.significantMovementPenalty, score.sleepProbability, 0.0001f)
         assertEquals("Mouvement important détecté", score.reason)
@@ -327,7 +327,9 @@ class WeightedSleepAnalyzerTest {
     fun `probability never goes below zero`() {
         val state = stateWithScore(0.05f)
 
-        val score = analyzer.analyze(FoxBrainEvent.MovementDetected(magnitude = 3f), state)
+        // Dérivé de config.movementThreshold plutôt que codé en dur, voir
+        // le test "significant movement decreases probability" ci-dessus.
+        val score = analyzer.analyze(FoxBrainEvent.MovementDetected(magnitude = config.movementThreshold + 0.5f), state)
 
         assertEquals(0f, score.sleepProbability, 0.0001f)
     }
