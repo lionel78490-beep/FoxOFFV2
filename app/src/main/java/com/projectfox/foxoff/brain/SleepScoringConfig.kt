@@ -282,5 +282,19 @@ data class SleepScoringConfig(
      * BPM varie naturellement de quelques battements d'une lecture à
      * l'autre même pendant un sommeil stable).
      */
-    val minBpmConfirmationToleranceBpm: Int = 2
+    val minBpmConfirmationToleranceBpm: Int = 2,
+
+    /**
+     * Fenêtre glissante (en minutes) sur laquelle `WeightedSleepAnalyzer`
+     * calcule le plancher "assez bas" (`FoxBrainState.bpmHistory`), à la
+     * place du minimum ABSOLU du jour (`minBpmToday`, qui reste inchangé
+     * pour l'affichage UI — voir sa doc). Ajouté et activé le 2026-08-16
+     * (mécanisme "plancher glissant", validé sur 140 000 nuits synthétiques
+     * + 2 vraies nuits — voir commentaire de `FoxBrainState.bpmHistory` et
+     * ROADMAP.md Phase 5, "Grande réinvestigation"). 90 min : assez long
+     * pour ne pas se resserrer sur du bruit ponctuel, assez court pour
+     * qu'un creux ancien (ex. tout début de nuit) ne verrouille plus le
+     * seuil pour le reste de la nuit.
+     */
+    val rollingBaselineWindowMinutes: Long = 90
 )

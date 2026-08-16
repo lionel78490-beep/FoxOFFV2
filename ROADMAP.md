@@ -980,6 +980,52 @@ Phase 8 (voir "Décisions repoussées").
   désormais. Build vert, 155 tests passent. **Validée sur seulement 2
   vraies nuits** (risque résiduel assumé et documenté) — à confirmer sur
   les prochaines nuits de test réelles.
+- ✅ **Grande réinvestigation "plancher glissant" (2026-08-16, même jour,
+  sur demande explicite "fait une grosse reinvestigation... revoir la
+  manière de le détecter... ne modifie rien avant qu'on ait fait 100.000
+  test et que je te le valide")** : 4 nouveaux mécanismes JAMAIS testés
+  jusque-là (`NextGenDetectionEngine`, moteur parallèle) — plancher BPM
+  glissant (fenêtre récente au lieu du minimum absolu du jour), bonus de
+  tendance BPM (vitesse de baisse), pénalité de densité de mouvement,
+  lissage EMA. Testés isolément puis combinés sur 100 000 nuits
+  synthétiques + 40 000 indépendantes (seed différente) + les 2 vraies
+  nuits (obligatoire, leçon du matin même).
+  **Résultats** : plancher glissant (seul) — détections manquées divisées
+  par 1,6 (20,5%→13%) sur les deux jeux synthétiques, FP quasi inchangés
+  (+0,03 à 0,07 point, bruit statistique) ; combiné à un bonus de tendance
+  verrouillé — manqués divisés par 3,3 (20,5%→6,2%) au prix d'un peu plus
+  de FP (+0,15 à 0,25 point). Pénalité de densité de mouvement confirmée
+  **néfaste sur données réelles** (nuit du 15-16 août : 146→463 min,
+  malgré un profil neutre en synthétique) — rejetée, nouvelle preuve que
+  le réel peut contredire le synthétique.
+  Lionel a choisi le plancher glissant seul (le plus sûr).
+  **Fausse alerte de régression détectée puis résolue** : la toute
+  première application en production a semblé régresser la nuit du
+  15-16 août (146→267 min) — investigation approfondie (bug d'inclusion
+  dans le moteur de simulation corrigé, sans effet ; puis comparaison
+  détaillée) a révélé que la cause était un ARTEFACT DE MÉTHODOLOGIE DE
+  TEST : `OptimizeWithRealNightsTest` utilise `restingBpmBaseline=50` fixe
+  pour comparer des candidates entre elles, tandis que
+  `RealNightReplayPostOptimizationTest` recalibre ce paramètre par
+  balayage (46 avec la config actuelle, pas 50) pour coller au plus près
+  au vrai journal — comparer "146 min (baseline 50)" à "267 min
+  (baseline 46)" comparait deux réglages différents, pas le plancher
+  glissant lui-même. Reconfirmé avec une méthodologie cohérente
+  (`baseline=50` des deux côtés) : le plancher glissant donne un résultat
+  **identique** à l'ancien comportement sur les 2 vraies nuits (270 min et
+  146 min, aucun changement) — ni régression, ni amélioration sur ces 2
+  nuits précises (la marge de progrès y était déjà réduite par le réglage
+  précédent), mais gain net confirmé sur la diversité du jeu synthétique.
+  ✅ **Appliqué en production** : `WeightedSleepAnalyzer`/`FoxBrain`
+  utilisent désormais `FoxBrainState.bpmHistory` (fenêtre glissante,
+  `SleepScoringConfig.rollingBaselineWindowMinutes = 90`) au lieu de
+  `minBpmToday` (minimum absolu du jour, laissé inchangé — toujours utilisé
+  pour l'affichage "BPM min aujourd'hui" côté UI, voir HealthScreen) pour
+  calculer le seuil "BPM assez bas". Build vert, aucun test cassé.
+  **Leçon méthodologique retenue** : toujours comparer deux configurations
+  avec EXACTEMENT le même protocole de test (même calibrage, mêmes
+  paramètres fixes) avant de conclure à une régression ou une amélioration
+  — une différence de méthodologie peut ressembler à un vrai effet.
 
 **Effort estimé** : 1-2 semaines.
 

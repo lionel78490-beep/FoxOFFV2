@@ -56,12 +56,13 @@ class FoxBrain(
 
                     // Même calcul de seuil que WeightedSleepAnalyzer (même
                     // config partagée, voir sa documentation pour le détail
-                    // du plancher minOf) : suit depuis quand le BPM est
-                    // continûment sous le seuil, et si le bonus a déjà été
-                    // accordé pour cet épisode — voir SleepScoringConfig
+                    // du plancher glissant minOf) : suit depuis quand le BPM
+                    // est continûment sous le seuil, et si le bonus a déjà
+                    // été accordé pour cet épisode — voir SleepScoringConfig
                     // .sustainedBpmDropDuration.
-                    val baseline = if (baseState.minBpmToday > 0) {
-                        minOf(baseState.minBpmToday.toFloat(), baseState.restingBpmBaseline.toFloat())
+                    val rollingMinBpm = baseState.bpmHistory.minOfOrNull { it.second }
+                    val baseline = if (rollingMinBpm != null) {
+                        minOf(rollingMinBpm.toFloat(), baseState.restingBpmBaseline.toFloat())
                     } else {
                         baseState.restingBpmBaseline.toFloat()
                     }
@@ -83,6 +84,15 @@ class FoxBrain(
                         toleranceBpm = config.minBpmConfirmationToleranceBpm
                     )
 
+                    // Plancher glissant (2026-08-16, voir doc de
+                    // FoxBrainState.bpmHistory) : ajoute cette lecture puis
+                    // purge celles sorties de la fenêtre
+                    // rollingBaselineWindowMinutes — la liste reste donc
+                    // bornée naturellement, pas de croissance illimitée sur
+                    // une longue nuit.
+                    val newBpmHistory = (baseState.bpmHistory + (event.timestamp to bpm))
+                        .filter { Duration.between(it.first, event.timestamp).toMinutes() <= config.rollingBaselineWindowMinutes }
+
                     baseState.copy(
                         // Un BPM reçu EST une preuve applicative de présence
                         // (voir WatchPresenceCoordinator) : il doit à lui seul
@@ -94,6 +104,7 @@ class FoxBrain(
                         lastBpmTime = LocalTime.now(),
                         minBpmToday = newMinBpmToday,
                         pendingLowBpm = newPendingLowBpm,
+                        bpmHistory = newBpmHistory,
                         maxBpmToday = maxOf(baseState.maxBpmToday, bpm),
                         bpmBelowBaselineSince = when {
                             !belowThreshold -> null

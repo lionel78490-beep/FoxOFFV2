@@ -141,7 +141,9 @@ tasks.withType<Test>().configureEach {
             "**/ContextualDetectionTest.class",
             "**/ActigraphyExperimentTest.class",
             "**/ProfiledNightGeneratorTest.class",
-            "**/OptimizeWithRealNightsTest.class"
+            "**/OptimizeWithRealNightsTest.class",
+            "**/NextGenDetectionTest.class",
+            "**/NextGenIndependentValidationTest.class"
         )
     }
 }

@@ -28,6 +28,11 @@ class WeightedSleepAnalyzerTest {
     ) = FoxBrainState(
         lastScore = FoxBrainScore(prob, 0.85f, reason),
         minBpmToday = minBpmToday,
+        // Le seuil "BPM assez bas" se base désormais sur bpmHistory (plancher
+        // glissant, 2026-08-16 — voir WeightedSleepAnalyzer) plutôt que sur
+        // minBpmToday directement : peuplé en cohérence pour que les tests
+        // existants, qui ne connaissent que minBpmToday, restent valides.
+        bpmHistory = if (minBpmToday > 0) listOf(Instant.now() to minBpmToday) else emptyList(),
         tvConnected = tvConnected
     )
 

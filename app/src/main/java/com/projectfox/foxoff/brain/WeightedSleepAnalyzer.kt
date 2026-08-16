@@ -17,24 +17,40 @@ class WeightedSleepAnalyzer(
 
         when (event) {
             is FoxBrainEvent.HeartRateReceived -> {
-                // Tant qu'aucun vrai minBpmToday n'existe encore (avant le
-                // premier échantillon de la session), on s'appuie sur
-                // restingBpmBaseline (moyenne générique au repos) plutôt que
-                // de désactiver la règle entièrement — voir FoxBrainState.
-                // Dès qu'un minBpmToday réel apparaît, il ne peut plus que
-                // RESSERRER le seuil (jamais l'élargir) par rapport au repos
-                // calibré (Health Connect) : minBpmToday se fige dès la
-                // toute première lecture de la soirée, souvent encore
-                // au-dessus du vrai BPM de sommeil, et ne peut ensuite que
-                // baisser — sans ce plancher, un minBpmToday élevé rendait
-                // le seuil plus permissif que le repos réel de l'utilisateur.
-                // Faux positif corrigé le 2026-08-13 (voir
-                // SleepScoringConfig.bpmDropThreshold) : minBpmToday figé à
-                // 71 bpm dès la première lecture, seuil 79,5 -> un BPM de 79
-                // (bien au-dessus des 45-52 de sommeil réel) déclenchait
-                // quand même le bonus.
-                val baseline = if (currentState.minBpmToday > 0) {
-                    minOf(currentState.minBpmToday.toFloat(), currentState.restingBpmBaseline.toFloat())
+                // Tant qu'aucune lecture BPM n'existe encore dans la fenêtre
+                // glissante (avant le premier échantillon de la session), on
+                // s'appuie sur restingBpmBaseline (moyenne générique au
+                // repos) plutôt que de désactiver la règle entièrement —
+                // voir FoxBrainState. Dès qu'une lecture réelle apparaît
+                // dans la fenêtre, elle ne peut plus que RESSERRER le seuil
+                // (jamais l'élargir) par rapport au repos calibré (Health
+                // Connect). Faux positif corrigé le 2026-08-13 (voir
+                // SleepScoringConfig.bpmDropThreshold) : le plancher figé
+                // dès la toute première lecture (71 bpm), seuil 79,5 -> un
+                // BPM de 79 (bien au-dessus des 45-52 de sommeil réel)
+                // déclenchait quand même le bonus.
+                //
+                // Plancher GLISSANT (fenêtre `rollingBaselineWindowMinutes`,
+                // `FoxBrainState.bpmHistory`) depuis le 2026-08-16, à la
+                // place du minimum ABSOLU du jour (`minBpmToday`, qui ne
+                // fait que baisser par conception — cause racine de la
+                // régression du 15-16 août, voir ROADMAP.md Phase 5) : une
+                // lecture basse ponctuelle et ancienne ne verrouille plus le
+                // seuil indéfiniment. Validé sur 140 000 nuits synthétiques
+                // (manqués divisés par 1,6, FP quasi inchangés) ET sur les
+                // 2 vraies nuits connues (résultat identique à l'ancien
+                // comportement — ni amélioration ni régression sur ces 2
+                // nuits précises, la marge de progrès y étant déjà réduite
+                // par le réglage précédent). Une fausse alerte de régression
+                // a été détectée puis résolue le même jour : un artefact de
+                // méthodologie de test (comparaison entre deux calibrages
+                // différents de `restingBpmBaseline`, 50 fixe vs 46
+                // recalibré), pas un vrai effet de ce mécanisme — voir
+                // ROADMAP.md Phase 5 pour le détail complet de
+                // l'investigation.
+                val rollingMinBpm = currentState.bpmHistory.minOfOrNull { it.second }
+                val baseline = if (rollingMinBpm != null) {
+                    minOf(rollingMinBpm.toFloat(), currentState.restingBpmBaseline.toFloat())
                 } else {
                     currentState.restingBpmBaseline.toFloat()
                 }

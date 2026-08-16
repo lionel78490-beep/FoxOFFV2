@@ -81,5 +81,27 @@ data class FoxBrainState(
      * confirmée et corrigée"). Reste `null` tant qu'aucune lecture sous le
      * `minBpmToday` courant n'est en attente de confirmation.
      */
-    val pendingLowBpm: Int? = null
+    val pendingLowBpm: Int? = null,
+
+    /**
+     * Historique glissant des lectures BPM récentes (horodatage, valeur),
+     * limité à `SleepScoringConfig.rollingBaselineWindowMinutes` — sert de
+     * plancher "assez bas" à WeightedSleepAnalyzer à la place de
+     * `minBpmToday` ci-dessus (minimum ABSOLU du jour, qui reste inchangé
+     * ici : encore utilisé tel quel pour l'affichage "BPM min aujourd'hui"
+     * côté UI, voir HealthScreen/DashboardViewModel).
+     *
+     * Ajouté le 2026-08-16 (framework de simulation `NextGenDetectionEngine`,
+     * mécanisme "plancher glissant" — voir ROADMAP.md Phase 5, "Grande
+     * réinvestigation") : `minBpmToday` ne fait que baisser toute la nuit
+     * par conception, donc UNE lecture basse ponctuelle et ancienne
+     * verrouille indéfiniment le seuil de détection pour le reste de la
+     * nuit — cause racine identifiée de la régression du 15-16 août.
+     * Validé sur 140 000 nuits synthétiques (100 000 + 40 000 nuits
+     * indépendantes, seeds différentes) : détections manquées divisées par
+     * 1,6 (20,5% -> 13%), faux positifs quasi inchangés (+0,03 à 0,07 point,
+     * dans le bruit statistique) — aucune régression sur les 2 vraies
+     * nuits capturées à ce jour.
+     */
+    val bpmHistory: List<Pair<Instant, Int>> = emptyList()
 )
